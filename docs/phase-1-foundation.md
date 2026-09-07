@@ -125,3 +125,20 @@ a session and set `email_confirmed_at`. The probe account was then deleted.
 Supabase's built-in mailer only delivers to project-team addresses and is capped
 at a few messages per hour. Real signups by other users need custom SMTP
 configured before the flow works for them.
+
+### Status: confirmation disabled for development (2026-09-07)
+
+Supabase gates email-template editing behind custom SMTP, so `{{ .Token }}`
+cannot be added on the default mailer — and the default mailer only delivers to
+project-team addresses anyway, so no email flow reaches staff until custom SMTP
+exists. Confirmation is therefore switched **off** in the dashboard for now
+(Authentication → Sign In / Providers → Confirm email).
+
+The OTP code path stays in `SignIn` and needs no rework when it is re-enabled:
+with confirmation off, `signUp` returns a session immediately and the confirm
+step is simply never reached. Re-enabling it is two steps — configure custom
+SMTP (Resend or Brevo both have adequate free tiers), then add
+`{{ .Token }}` to the Confirm signup template.
+
+This is a development posture. Confirmation should be back on before the system
+handles real customer data.
