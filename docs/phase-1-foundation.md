@@ -84,3 +84,44 @@ because Supabase passwords routinely contain `@`, which `urlparse` mis-splits.
 
 PostgREST exposes both tables and returns `[]` to an anonymous caller, confirming
 the schema cache is loaded and RLS denies by default.
+
+## Email confirmation — OTP code flow
+
+Confirmation stays **on**. The app confirms with a 6-digit code rather than a
+link: a link has nowhere to land in Electron (no web origin), so the alternative
+would be registering a `crafcube://` protocol handler and allow-listing a
+redirect URL. The code flow needs neither and behaves the same on every OS.
+
+`SignIn` is a three-step state machine — `signin` → `signup` → `confirm`:
+
+- Signing up without a returned session moves to the code step.
+- Signing in with an unconfirmed address is treated as a routing condition, not
+  an error: the app resends a code and moves to the same step.
+- `verifyOtp({ type: 'signup' })` exchanges the code for a session, which
+  arrives through the existing `onAuthStateChange` subscription.
+- Resend is rate-limited client-side by a 60-second cooldown.
+
+### Required dashboard change
+
+Authentication → Emails → **Confirm signup** template must contain the code:
+
+```
+Your confirmation code is {{ .Token }}
+```
+
+The stock template only interpolates `{{ .ConfirmationURL }}`. Without `.Token`
+the recipient gets a link and has no code to type.
+
+### Verified against the live project
+
+`verifyOtp` was probed end-to-end without sending mail, by seeding a token
+directly and calling `/auth/v1/verify`. GoTrue stores the confirmation token
+**hashed** as `sha224(email + otp)` in `auth.users.confirmation_token` — a
+plaintext value returns `otp_expired`. With the correct hash the endpoint issued
+a session and set `email_confirmed_at`. The probe account was then deleted.
+
+### Default SMTP limitation
+
+Supabase's built-in mailer only delivers to project-team addresses and is capped
+at a few messages per hour. Real signups by other users need custom SMTP
+configured before the flow works for them.
