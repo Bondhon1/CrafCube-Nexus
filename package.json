@@ -1,0 +1,22 @@
+{
+  "name": "crafcube-nexus",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CrafCube Nexus \u00e2\u20ac\u201d 3D artifact business management system",
+  "packageManager": "pnpm@10.26.1",
+  "scripts": {
+    "dev": "pnpm --filter @crafcube/desktop dev",
+    "build": "pnpm --filter @crafcube/desktop build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  }
+}
