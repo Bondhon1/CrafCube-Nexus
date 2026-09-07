@@ -9,3 +9,6 @@ release/
 .vite/
 __pycache__/
 .venv/
+
+# Local-only database credentials
+supabase/.env.local

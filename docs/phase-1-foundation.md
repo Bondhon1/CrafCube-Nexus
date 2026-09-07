@@ -54,3 +54,33 @@ Electron shell, React UI, Supabase, authentication, organizations and roles.
 - `vite build` produces the renderer bundle plus `main.js` and `preload.cjs`.
 - The SQL has not been run against a live database — no Postgres was reachable
   here. Applying the three migrations is the first step of Phase 2.
+
+## Applied and verified against the live database (2026-09-07)
+
+All three migrations ran successfully on the Supabase project.
+
+**Connectivity note.** The direct host `db.<ref>.supabase.co` publishes only an
+AAAA record, so it is unreachable from an IPv4-only network. `apply_migrations.py`
+detects this and falls back to the regional session pooler
+(`aws-0-<region>.pooler.supabase.com`, user `postgres.<ref>`), probing regions
+until one accepts the credentials. The connection string is read from
+`supabase/.env.local` or `apps/desktop/.env.local`, and the URL is split by hand
+because Supabase passwords routinely contain `@`, which `urlparse` mis-splits.
+
+**Behavioural tests** (run in a transaction, rolled back — no test data persists):
+
+| Check | Result |
+|---|---|
+| `handle_new_user` creates a profile per auth user | pass |
+| `create_organization` creates org + active owner atomically | pass |
+| Owner sees their organization | pass |
+| Non-member sees 0 organizations and 0 members | pass |
+| Non-member update matches no rows | pass |
+| Audit rows written for org and membership insert | pass |
+| Client `INSERT` into `audit_logs` denied | pass |
+| Demoting the sole owner rejected | pass |
+| Deleting the sole owner rejected | pass |
+| Demotion allowed once a second owner exists | pass |
+
+PostgREST exposes both tables and returns `[]` to an anonymous caller, confirming
+the schema cache is loaded and RLS denies by default.
