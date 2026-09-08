@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
+  /** 'supabase' (default) or 'b2'. */
+  readonly VITE_STORAGE_BACKEND?: string;
 }
 
 interface ImportMeta {
@@ -17,10 +19,17 @@ interface NexusWindowControls {
   onMaximizedChanged: (handler: (maximized: boolean) => void) => () => void;
 }
 
+interface NexusStorage {
+  put(url: string, headers: Record<string, string>, body: ArrayBuffer): Promise<{ etag: string | null }>;
+  get(url: string): Promise<ArrayBuffer>;
+  remove(url: string): Promise<boolean>;
+}
+
 interface NexusBridge {
   platform: string;
   versions: { electron: string; node: string; chrome: string };
   ping: () => Promise<unknown>;
+  storage: NexusStorage;
   window: NexusWindowControls;
 }
 

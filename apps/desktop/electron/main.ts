@@ -86,6 +86,49 @@ ipcMain.handle('window:is-maximized', (event) => callerWindow(event)?.isMaximize
 
 ipcMain.handle('nexus:ping', () => ({ ok: true, at: new Date().toISOString() }));
 
+/**
+ * Object transfers run here rather than in the renderer.
+ *
+ * A presigned S3 request from the renderer is a cross-origin fetch, which would
+ * need CORS rules on the bucket and still sends `Origin: null` from a file://
+ * page. Node performs no CORS check, so routing transfers through the main
+ * process removes that class of failure entirely.
+ */
+ipcMain.handle(
+  'storage:put',
+  async (_event, url: string, headers: Record<string, string>, body: ArrayBuffer) => {
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body,
+    });
+    if (!response.ok) {
+      // S3 errors are XML; the first 300 characters carry the code and message.
+      const detail = (await response.text()).slice(0, 300);
+      throw new Error(`upload failed (${response.status}): ${detail}`);
+    }
+    return { etag: response.headers.get('etag') };
+  },
+);
+
+ipcMain.handle('storage:get', async (_event, url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new Error(`download failed (${response.status}): ${detail}`);
+  }
+  return await response.arrayBuffer();
+});
+
+ipcMain.handle('storage:delete', async (_event, url: string) => {
+  const response = await fetch(url, { method: 'DELETE' });
+  if (!response.ok && response.status !== 404) {
+    const detail = (await response.text()).slice(0, 300);
+    throw new Error(`delete failed (${response.status}): ${detail}`);
+  }
+  return true;
+});
+
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {

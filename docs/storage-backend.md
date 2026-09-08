@@ -1,6 +1,7 @@
 # Storage backend decision
 
-**Status:** Supabase Storage in use. Backblaze B2 is the chosen upgrade path.
+**Status:** Backblaze B2 implemented, awaiting credentials. Supabase Storage
+remains the default until `VITE_STORAGE_BACKEND=b2` is set.
 **Date:** 2026-09-08
 **Affects:** design doc §44 (storage architecture), §77 (file security), §78 (deduplication)
 
@@ -76,16 +77,66 @@ The trigger to migrate is whichever comes first:
 - **5 GB egress/month.** Only counts downloads, and the desktop client caches
   nothing yet, so re-downloading the same model repeatedly is the risk.
 
-## Migration path
+## Switching to B2
 
-1. Write `B2ObjectStore` (or `R2ObjectStore`) implementing `ObjectStore`.
-2. Add a Supabase Edge Function that verifies org membership against
-   `organization_members`, then returns a presigned PUT/GET URL. The account key
-   lives in the function's secrets, never in the client.
-3. Upload from the Electron **main** process rather than the renderer, which
-   avoids bucket CORS entirely.
-4. Backfill existing objects; `model_files.storage_key` is the only column that
-   moves, and `sha256` makes the copy verifiable.
+Steps 1-3 are built. Only the credentials and the deploy remain.
+
+### 1. Create the bucket and key (no card)
+
+1. Sign up at [backblaze.com](https://www.backblaze.com/) and open **B2 Cloud
+   Storage**.
+2. **Create a Bucket** — name it `crafcube-nexus`, **Files in Bucket: Private**.
+   Object keys already carry the organization id, and a public bucket would make
+   every model world-readable to anyone holding a link.
+3. Note the bucket's **Endpoint**, shown as `s3.us-west-004.backblazeb2.com`.
+   The region is the middle segment — `us-west-004` in that example.
+4. **Application Keys → Add a New Application Key**: scope it to that bucket
+   only, with Read and Write access. You get a `keyID` and an `applicationKey`;
+   **the application key is shown once**.
+
+### 2. Deploy the signing function
+
+The application key is account-wide, so it never goes near the desktop bundle —
+Vite would inline it into every install. It lives only in the function's
+secrets.
+
+```bash
+export SUPABASE_ACCESS_TOKEN=<personal access token>   # Account → Access Tokens
+supabase functions deploy storage-sign --project-ref <project-ref>
+supabase secrets set --project-ref <project-ref>   B2_REGION=us-west-004   B2_BUCKET=crafcube-nexus   B2_KEY_ID=<keyID>   B2_APPLICATION_KEY=<applicationKey>
+```
+
+### 3. Point the app at it
+
+```
+# apps/desktop/.env
+VITE_STORAGE_BACKEND=b2
+```
+
+### 4. Backfill (only if models were already uploaded)
+
+`model_files.storage_key` is the only column that moves, and `sha256` makes each
+copy verifiable.
+
+## How authorization works with B2
+
+B2 has no row-level security, so the database still decides:
+
+1. The renderer asks `storage-sign` for a URL, sending the user's JWT.
+2. The function creates a Supabase client **with that JWT**, so its
+   `is_org_member` / `has_role_at_least` calls run under the caller's own RLS.
+   It never uses the service role.
+3. The key's first path segment must be an organization the caller belongs to.
+   Keys containing `..`, backslashes or a leading `/` are rejected outright, so
+   a caller cannot escape their prefix past the membership check.
+4. Reads require membership; writes and deletes require `production_manager`,
+   matching the `model_files` insert policy.
+5. Only then is a short-lived presigned URL returned — 5 minutes by default,
+   capped at 1 hour.
+
+Transfers run in the Electron **main** process. A presigned request from the
+renderer is cross-origin and would need bucket CORS rules, while sending
+`Origin: null` from a `file://` page; Node applies no CORS check at all.
 
 Object keys already follow the §77 layout
 (`<organization_id>/models/<model_id>/v<version>/<sha256><ext>`), which is
