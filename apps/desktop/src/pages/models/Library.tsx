@@ -6,11 +6,8 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/app/SessionProvider';
 import { formatBytes, objectStore, sha256 } from '@/lib/storage';
 import { ModelsIcon } from '@/components/icons';
-import { renderThumbnail } from '@/components/ModelPreview';
 import { Visualizer } from '@/components/Visualizer';
-import {
-  Badge, EmptyRow, ErrorNote, Modal, PageHeader, Panel, Row, Table, Td, Th,
-} from '@/components/ui';
+import { Badge, EmptyRow, ErrorNote, PageHeader, Panel, Table, Td, Th } from '@/components/ui';
 
 interface VersionWithFiles extends ModelVersion {
   files: ModelFile[];
@@ -20,6 +17,10 @@ interface ModelRow extends Model {
   versions: VersionWithFiles[];
 }
 
+function latestVersion(model: ModelRow): VersionWithFiles | undefined {
+  return [...model.versions].sort((a, b) => b.version - a.version)[0];
+}
+
 /** Signed thumbnail URLs, resolved once per library load. */
 function useThumbnails(rows: ModelRow[]): Record<string, string> {
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -27,8 +28,7 @@ function useThumbnails(rows: ModelRow[]): Record<string, string> {
   const keys = useMemo(() => {
     const out: Record<string, string> = {};
     for (const model of rows) {
-      const latest = [...model.versions].sort((a, b) => b.version - a.version)[0];
-      const thumb = latest?.files.find((f) => f.kind === 'thumbnail');
+      const thumb = latestVersion(model)?.files.find((f) => f.kind === 'thumbnail');
       if (thumb) out[model.id] = thumb.storage_key;
     }
     return out;
@@ -64,7 +64,7 @@ export function Library() {
   const [rows, setRows] = useState<ModelRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<ModelRow | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
   const load = useCallback(async () => {
@@ -85,7 +85,7 @@ export function Library() {
 
   const thumbnails = useThumbnails(rows);
 
-  const visible = rows.filter((m) => {
+  const visible = useMemo(() => rows.filter((m) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return (
@@ -93,7 +93,18 @@ export function Library() {
       (m.category ?? '').toLowerCase().includes(q) ||
       m.tags.some((t) => t.toLowerCase().includes(q))
     );
-  });
+  }), [rows, query]);
+
+  // Keep a selection so the preview panel is never empty when something exists.
+  useEffect(() => {
+    if (visible.length === 0) {
+      setSelectedId(null);
+    } else if (!selectedId || !visible.some((m) => m.id === selectedId)) {
+      setSelectedId(visible[0].id);
+    }
+  }, [visible, selectedId]);
+
+  const selected = rows.find((m) => m.id === selectedId) ?? null;
 
   return (
     <div>
@@ -117,161 +128,172 @@ export function Library() {
 
       <ErrorNote message={error} />
 
-      <Panel>
-        <Table
-          head={
-            <>
-              <Th>Model</Th>
-              <Th>Category</Th>
-              <Th>Source</Th>
-              <Th>License</Th>
-              <Th right>Versions</Th>
-              <Th right>Latest size</Th>
-              <Th />
-            </>
-          }
-        >
-          {loading && <EmptyRow colSpan={7}>Loading…</EmptyRow>}
-          {!loading && visible.length === 0 && (
-            <EmptyRow colSpan={7}>
-              {rows.length === 0
-                ? 'No models yet. Upload an STL or 3MF to start the library.'
-                : 'Nothing matches that search.'}
-            </EmptyRow>
-          )}
-          {visible.map((m) => {
-            const latest = [...m.versions].sort((a, b) => b.version - a.version)[0];
-            const bytes = latest?.files.reduce((sum, f) => sum + Number(f.byte_size), 0) ?? 0;
-            return (
-              <Row key={m.id}>
-                <Td>
-                  <div className="flex items-center gap-3">
-                    {thumbnails[m.id] ? (
-                      <img
-                        src={thumbnails[m.id]}
-                        alt=""
-                        className="h-10 w-10 shrink-0 rounded border border-line bg-ink-950 object-cover"
-                      />
-                    ) : (
-                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded
-                                      border border-line bg-ink-950 text-slate-700">
-                        <ModelsIcon size={16} />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
+        <Panel className="min-w-0">
+          <Table
+            head={
+              <>
+                <Th>Model</Th>
+                <Th>Source</Th>
+                <Th>License</Th>
+                <Th right>Ver</Th>
+                <Th right>Size</Th>
+              </>
+            }
+          >
+            {loading && <EmptyRow colSpan={5}>Loading…</EmptyRow>}
+            {!loading && visible.length === 0 && (
+              <EmptyRow colSpan={5}>
+                {rows.length === 0
+                  ? 'No models yet. Upload an STL or 3MF to start the library.'
+                  : 'Nothing matches that search.'}
+              </EmptyRow>
+            )}
+            {visible.map((m) => {
+              const latest = latestVersion(m);
+              const bytes = latest?.files.reduce((sum, f) => sum + Number(f.byte_size), 0) ?? 0;
+              const active = m.id === selectedId;
+              return (
+                <tr
+                  key={m.id}
+                  onClick={() => setSelectedId(m.id)}
+                  className={`cursor-pointer border-b border-line/60 transition-colors last:border-0 ${
+                    active ? 'bg-mint/[0.07]' : 'hover:bg-white/[0.02]'
+                  }`}
+                >
+                  <Td>
+                    <div className="flex items-center gap-3">
+                      {thumbnails[m.id] ? (
+                        <img
+                          src={thumbnails[m.id]}
+                          alt=""
+                          className="h-10 w-10 shrink-0 rounded border border-line bg-ink-950 object-cover"
+                        />
+                      ) : (
+                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded
+                                        border border-line bg-ink-950 text-slate-700">
+                          <ModelsIcon size={16} />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className={`truncate font-medium ${active ? 'text-mint' : 'text-slate-200'}`}>
+                          {m.name}
+                        </div>
+                        {latest?.width_mm ? (
+                          <div className="whitespace-nowrap text-xs text-slate-500">
+                            {Number(latest.width_mm).toFixed(1)} × {Number(latest.depth_mm).toFixed(1)}
+                            {' × '}{Number(latest.height_mm).toFixed(1)} mm
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-600">Not analysed yet</div>
+                        )}
                       </div>
-                    )}
-                    <div>
-                  <div className="whitespace-nowrap font-medium text-slate-200">{m.name}</div>
-                  {latest?.width_mm ? (
-                    <div className="whitespace-nowrap text-xs text-slate-500">
-                      {/* Three decimals is false precision for a printed part. */}
-                      {Number(latest.width_mm).toFixed(1)} × {Number(latest.depth_mm).toFixed(1)}
-                      {' × '}{Number(latest.height_mm).toFixed(1)} mm
                     </div>
-                  ) : (
-                    <div className="text-xs text-slate-600">Not analysed yet</div>
-                  )}
-                    </div>
-                  </div>
-                </Td>
-                <Td className="text-slate-400">{m.category ?? '—'}</Td>
-                <Td><Badge>{GENERATION_METHOD_LABELS[m.generation_method]}</Badge></Td>
-                <Td>
-                  <Badge tone={m.license === 'commercial' ? 'mint'
-                    : m.license === 'restricted' ? 'red' : 'slate'}>
-                    {MODEL_LICENSE_LABELS[m.license]}
-                  </Badge>
-                </Td>
-                <Td right>v{latest?.version ?? 0}</Td>
-                <Td right>{bytes ? formatBytes(bytes) : '—'}</Td>
-                <Td right>
-                  <button onClick={() => setOpen(m)}
-                          className="text-xs text-mint transition-colors hover:text-mint-500">
-                    Versions
-                  </button>
-                </Td>
-              </Row>
-            );
-          })}
-        </Table>
-      </Panel>
+                  </Td>
+                  <Td><Badge>{GENERATION_METHOD_LABELS[m.generation_method]}</Badge></Td>
+                  <Td>
+                    <Badge tone={m.license === 'commercial' ? 'mint'
+                      : m.license === 'restricted' ? 'red' : 'slate'}>
+                      {MODEL_LICENSE_LABELS[m.license]}
+                    </Badge>
+                  </Td>
+                  <Td right>v{latest?.version ?? 0}</Td>
+                  <Td right>{bytes ? formatBytes(bytes) : '—'}</Td>
+                </tr>
+              );
+            })}
+          </Table>
+        </Panel>
 
-      {open && <VersionsModal model={open} onClose={() => setOpen(null)} />}
+        <ModelPanel model={selected} onThumbnail={load} />
+      </div>
     </div>
   );
 }
 
-function VersionsModal({ model, onClose }: { model: ModelRow; onClose: () => void }) {
+/**
+ * Preview and files for the selected model.
+ *
+ * The visualizer sits beside the table rather than inside a dialog: choosing
+ * between models is a visual decision, and a modal turns comparing two of them
+ * into a sequence of clicks.
+ */
+function ModelPanel({
+  model,
+  onThumbnail,
+}: {
+  model: ModelRow | null;
+  onThumbnail: () => void;
+}) {
   const { activeOrg } = useSession();
+  const [mesh, setMesh] = useState<{ buffer: ArrayBuffer; filename: string } | null>(null);
+  const [state, setState] = useState<'idle' | 'loading' | 'unavailable'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
-  const [mesh, setMesh] = useState<{ buffer: ArrayBuffer; filename: string } | null>(null);
-  const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'unavailable'>('idle');
-  const versions = [...model.versions].sort((a, b) => b.version - a.version);
-  const latest = versions[0];
 
-  // Fetch and convert the source so the preview works for 3MF and OBJ too, not
-  // just STL. Thumbnails are written back, so this cost is paid once.
+  const latest = model ? latestVersion(model) : undefined;
+  const source = latest?.files.find((f) => f.kind === 'source' || f.kind === 'mesh');
+  const sourceKey = source?.storage_key;
+  const hasThumbnail = Boolean(latest?.files.some((f) => f.kind === 'thumbnail'));
+
   useEffect(() => {
-    const source = latest?.files.find((f) => f.kind === 'source' || f.kind === 'mesh');
-    const bridge = window.nexus?.engine;
-    if (!source || !bridge || !activeOrg) {
-      setPreviewState('unavailable');
+    setMesh(null);
+    setError(null);
+    if (!sourceKey || !source || !activeOrg || !model || !latest) {
+      setState('unavailable');
       return;
     }
 
     let cancelled = false;
-    setPreviewState('loading');
+    setState('loading');
 
     void (async () => {
       try {
-        const blob = await objectStore.download(source.storage_key);
-        const buffer = await blob.arrayBuffer();
+        const blob = await objectStore.download(sourceKey);
         if (cancelled) return;
-        // The visualizer reads 3MF natively, so the original file is shown
-        // with its own colour groups rather than a flattened conversion.
+        const buffer = await blob.arrayBuffer();
         setMesh({ buffer, filename: source.filename });
-        setPreviewState('idle');
-
-        // Thumbnails still render from STL, which the engine converts.
-        const stl = source.filename.toLowerCase().endsWith('.stl')
-          ? buffer
-          : await bridge.meshPreview(source.filename, buffer);
-
-        // Backfill a thumbnail for models uploaded before previews existed.
-        const hasThumbnail = latest.files.some((f) => f.kind === 'thumbnail');
-        if (!hasThumbnail) {
-          const png = await renderThumbnail(stl);
-          if (png && !cancelled) {
-            const key = `${activeOrg.id}/models/${model.id}/v${latest.version}/thumbnail.png`;
-            try {
-              await objectStore.upload(key, png, 'image/png');
-              await supabase.from('model_files').insert({
-                organization_id: activeOrg.id,
-                version_id: latest.id,
-                kind: 'thumbnail',
-                filename: 'thumbnail.png',
-                extension: '.png',
-                storage_key: key,
-                byte_size: png.size,
-                content_type: 'image/png',
-                sha256: await sha256(png),
-              });
-            } catch {
-              // A missing thumbnail is cosmetic; never surface it as an error.
-            }
-          }
+        setState('idle');
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+          setState('unavailable');
         }
-      } catch {
-        if (!cancelled) setPreviewState('unavailable');
       }
     })();
 
     return () => { cancelled = true; };
-  }, [latest, model.id, activeOrg]);
+    // Keyed on the file, not the model object, so a parent re-render caused by
+    // the thumbnail write does not restart the download.
+  }, [sourceKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
-   * The viewer sandbox blocks download links, so the file is fetched through a
-   * short-lived signed URL and handed to the OS via an object URL.
+   * Stores the visualizer's own frame as the model's thumbnail. Backfills
+   * anything uploaded before previews existed, and only ever runs once per
+   * version because the guard checks for an existing thumbnail row.
    */
+  const saveThumbnail = useCallback(async (png: Blob) => {
+    if (!activeOrg || !model || !latest || hasThumbnail) return;
+    const key = `${activeOrg.id}/models/${model.id}/v${latest.version}/thumbnail.png`;
+    try {
+      await objectStore.upload(key, png, 'image/png');
+      await supabase.from('model_files').insert({
+        organization_id: activeOrg.id,
+        version_id: latest.id,
+        kind: 'thumbnail',
+        filename: 'thumbnail.png',
+        extension: '.png',
+        storage_key: key,
+        byte_size: png.size,
+        content_type: 'image/png',
+        sha256: await sha256(png),
+      });
+      onThumbnail();
+    } catch {
+      // Cosmetic: never surface a thumbnail failure as a page error.
+    }
+  }, [activeOrg, model, latest, hasThumbnail, onThumbnail]);
+
   async function download(file: ModelFile) {
     setError(null);
     setDownloading(file.id);
@@ -289,52 +311,63 @@ function VersionsModal({ model, onClose }: { model: ModelRow; onClose: () => voi
     setDownloading(null);
   }
 
+  if (!model) {
+    return (
+      <div className="card grid min-h-[320px] place-items-center text-sm text-slate-600">
+        Select a model to preview it.
+      </div>
+    );
+  }
+
+  const versions = [...model.versions].sort((a, b) => b.version - a.version);
+
   return (
-    <Modal title={model.name} onClose={onClose} width="w-[620px]">
+    <div className="card min-w-0 space-y-4">
+      <div className="min-w-0">
+        <h2 className="truncate text-sm font-semibold text-slate-200">{model.name}</h2>
+        <p className="mt-0.5 text-xs text-slate-500">
+          {[model.category, GENERATION_METHOD_LABELS[model.generation_method]]
+            .filter(Boolean).join(' · ')}
+        </p>
+      </div>
+
       <ErrorNote message={error} />
 
-      {model.description && <p className="mb-4 text-sm text-slate-400">{model.description}</p>}
-
       {mesh ? (
-        <div className="mb-4">
-          <Visualizer buffer={mesh.buffer} filename={mesh.filename} height={280} />
-        </div>
+        <Visualizer
+          buffer={mesh.buffer}
+          filename={mesh.filename}
+          height={300}
+          onSnapshot={hasThumbnail ? undefined : saveThumbnail}
+        />
       ) : (
-        <div className="mb-4 grid h-[240px] place-items-center rounded-lg border border-line
+        <div className="grid h-[300px] place-items-center rounded-lg border border-line
                         bg-ink-950/50 text-xs text-slate-600">
-          {previewState === 'loading'
-            ? 'Preparing preview…'
-            : 'Preview needs the local engine running.'}
+          {state === 'loading' ? 'Loading model…' : 'No source file to preview.'}
         </div>
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         {versions.map((v) => (
-          <div key={v.id} className="rounded-lg border border-line bg-ink-950/50 p-4">
+          <div key={v.id} className="rounded-lg border border-line bg-ink-950/50 p-3">
             <div className="flex items-baseline justify-between">
-              <span className="font-medium text-slate-100">v{v.version}</span>
-              <span className="text-xs text-slate-500">
+              <span className="text-sm font-medium text-slate-200">v{v.version}</span>
+              <span className="text-[11px] text-slate-600">
                 {new Date(v.created_at).toLocaleDateString()}
               </span>
             </div>
-            {v.notes && <p className="mt-1 text-sm text-slate-400">{v.notes}</p>}
-            {v.prompt && (
-              <p className="mt-2 rounded border border-line bg-ink-900 p-2 font-mono text-xs text-slate-500">
-                {v.prompt}
-              </p>
-            )}
-
-            <ul className="mt-3 space-y-1.5">
+            {v.notes && <p className="mt-1 text-xs text-slate-400">{v.notes}</p>}
+            <ul className="mt-2 space-y-1">
               {v.files.map((f) => (
-                <li key={f.id} className="flex items-center justify-between text-sm">
-                  <span className="min-w-0 truncate text-slate-300">
+                <li key={f.id} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="min-w-0 truncate text-slate-400">
                     {f.filename}
-                    <span className="ml-2 text-xs text-slate-600">{formatBytes(Number(f.byte_size))}</span>
+                    <span className="ml-1.5 text-slate-600">{formatBytes(Number(f.byte_size))}</span>
                   </span>
                   <button
                     onClick={() => void download(f)}
                     disabled={downloading === f.id}
-                    className="ml-3 shrink-0 text-xs text-mint transition-colors hover:text-mint-500 disabled:opacity-50"
+                    className="shrink-0 text-mint transition-colors hover:text-mint-500 disabled:opacity-50"
                   >
                     {downloading === f.id ? 'Fetching…' : 'Download'}
                   </button>
@@ -344,6 +377,6 @@ function VersionsModal({ model, onClose }: { model: ModelRow; onClose: () => voi
           </div>
         ))}
       </div>
-    </Modal>
+    </div>
   );
 }

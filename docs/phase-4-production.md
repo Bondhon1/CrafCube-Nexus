@@ -164,3 +164,39 @@ choices survive a re-slice.
 
 Per-lane shortfalls are shown against that spool's remaining stock, so the
 reason to change colour is visible next to the control that changes it.
+
+## Visualizer placement and the library preview (2026-09-08)
+
+### Multi-part models floated off the plate
+
+Centring computed a *displacement* from the model's current world box and then
+**assigned** it with `position.copy()`. That is only correct when the root group
+already sits at the origin. A 3MF laying several parts out on a build plate
+carries its own transform, so assigning discarded it and the parts drifted into
+mid-air. Now `position.add()`, and a development-only assertion warns when a
+model does not come to rest on the plate.
+
+A model exceeding the build volume still hangs outside the box — that is the
+warning working, not misplacement.
+
+### The camera could go under the bed
+
+`maxPolarAngle` is clamped just short of horizontal. Orbiting beneath the plate
+put the grid above the model and hid it behind the bed, which reads as a broken
+render.
+
+### One renderer, not two
+
+Thumbnails came from a second offscreen scene and produced a **black frame**.
+Rather than debug a duplicate of the same setup, the visualizer now captures its
+own first settled frame through `toBlob` (which needs `preserveDrawingBuffer`).
+The stored thumbnail is therefore exactly the image the operator saw, and there
+is one scene to keep correct. `ModelPreview` is deleted.
+
+### The library previews inline
+
+The model list is a split view: table on the left, visualizer and version files
+on the right, with the selected row highlighted. Choosing between models is a
+visual decision, and a modal made comparing two of them a sequence of clicks.
+
+Selecting a model with no thumbnail backfills one from that same frame.

@@ -39,6 +39,12 @@ interface VisualizerProps {
   /** Overrides per group index; changing these repaints without reloading. */
   colorOverrides?: Record<number, string>;
   onGroups?: (groups: ColorGroup[]) => void;
+  /**
+   * PNG of the first rendered frame. Capturing from this canvas rather than a
+   * second offscreen renderer means the stored thumbnail is exactly the image
+   * the operator saw — and there is only one scene setup to keep correct.
+   */
+  onSnapshot?: (png: Blob) => void;
   height?: number;
 }
 
@@ -50,6 +56,7 @@ export function Visualizer({
   bed = { x: 260, y: 260, z: 260 },
   colorOverrides,
   onGroups,
+  onSnapshot,
   height = 320,
 }: VisualizerProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -68,7 +75,13 @@ export function Visualizer({
     if (!container) return;
 
     const width = container.clientWidth || 480;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    // preserveDrawingBuffer keeps the frame readable after it is drawn, which
+    // toBlob needs; without it a snapshot comes back blank.
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      preserveDrawingBuffer: true,
+    });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(width, height, false);
     renderer.shadowMap.enabled = true;
@@ -80,6 +93,9 @@ export function Visualizer({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.09;
+    // Stop the camera dropping under the bed, where the plate hides the model
+    // and the grid appears above it — which reads as the model being broken.
+    controls.maxPolarAngle = Math.PI * 0.495;
 
     scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x0a1c22, 1.4));
     const key = new THREE.DirectionalLight(0xffffff, 2.0);
@@ -124,6 +140,8 @@ export function Visualizer({
 
     let disposed = false;
     let frame = 0;
+    let snapshotPending = false;
+    let framesDrawn = 0;
 
     void (async () => {
       let object: THREE.Object3D;
@@ -188,7 +206,8 @@ export function Visualizer({
       model.add(object);
 
       // Sit the model on the plate, centred. Foreign files carry their own
-      // build transforms, often for a different bed.
+      // build transforms — often a different bed, or several parts laid out
+      // side by side.
       object.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(object);
       const centre = box.getCenter(new THREE.Vector3());
@@ -196,7 +215,11 @@ export function Visualizer({
       const delta = model
         .worldToLocal(new THREE.Vector3(-centre.x, -box.min.y, -centre.z))
         .sub(origin);
-      object.position.copy(delta);
+
+      // `delta` is a displacement, measured from where the model already sits.
+      // Assigning it would discard any transform the file carried, which is why
+      // multi-part models floated off the plate.
+      object.position.add(delta);
 
       const size = box.getSize(new THREE.Vector3());
       // The box above was measured before centring; frame against where the
@@ -204,6 +227,12 @@ export function Visualizer({
       object.updateMatrixWorld(true);
       const placed = new THREE.Box3().setFromObject(object);
       const focus = placed.getCenter(new THREE.Vector3());
+
+      if (import.meta.env.DEV) {
+        // Placement is easy to get subtly wrong and hard to see; assert it.
+        const rested = Math.abs(placed.min.y) < 0.5;
+        if (!rested) console.warn('model does not rest on the plate', placed.min.y);
+      }
 
       setFits(size.x <= bed.x && size.z <= bed.y && size.y <= bed.z);
 
@@ -220,12 +249,23 @@ export function Visualizer({
       controls.update();
 
       onGroups?.(groups);
+      snapshotPending = onSnapshot !== undefined;
     })();
 
     const animate = () => {
       frame = requestAnimationFrame(animate);
       controls.update();
       renderer.render(scene, camera);
+      framesDrawn += 1;
+
+      // Wait a couple of frames so the capture is of a settled scene, not the
+      // first partially-lit one.
+      if (snapshotPending && framesDrawn > 2) {
+        snapshotPending = false;
+        renderer.domElement.toBlob((blob) => {
+          if (blob && !disposed) onSnapshot?.(blob);
+        }, 'image/png');
+      }
     };
     animate();
 
@@ -254,7 +294,7 @@ export function Visualizer({
       renderer.domElement.remove();
       renderer.dispose();
     };
-  }, [buffer, filename, isStl, bed.x, bed.y, bed.z, height, onGroups]);
+  }, [buffer, filename, isStl, bed.x, bed.y, bed.z, height, onGroups, onSnapshot]);
 
   // Repaint without reloading — this is what makes swapping a spool feel live.
   useEffect(() => {

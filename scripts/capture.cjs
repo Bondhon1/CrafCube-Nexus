@@ -143,8 +143,9 @@ app.whenReady().then(async () => {
   for (const route of routes) {
     await win.webContents.executeJavaScript(`location.hash = ${JSON.stringify('#' + route)}`);
     await win.loadFile(path.join(APP_DIR, 'dist', 'index.html'), { hash: route });
-    // Give the route's queries time to resolve before capturing.
-    await new Promise((r) => setTimeout(r, 3500));
+    // Give the route's queries time to resolve before capturing. Screens that
+    // download and render a model need much longer than a table.
+    await new Promise((r) => setTimeout(r, Number(process.env.NEXUS_ROUTE_WAIT) || 3500));
 
     // NEXUS_CLICK opens a dialog before capturing, so modals can be reviewed.
     if (process.env.NEXUS_CLICK) {
@@ -157,6 +158,21 @@ app.whenReady().then(async () => {
       })()`);
       // Converting and rendering a large mesh takes longer than a click.
       await new Promise((r) => setTimeout(r, Number(process.env.NEXUS_CLICK_WAIT) || 1500));
+    }
+
+    // NEXUS_FILL types into the first text input, which is how a filtered list
+    // reaches a specific row.
+    if (process.env.NEXUS_FILL) {
+      await win.webContents.executeJavaScript(`(() => {
+        const input = document.querySelector('input[type=text], input:not([type])');
+        if (!input) return 'no input';
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype, 'value').set;
+        setter.call(input, ${JSON.stringify(process.env.NEXUS_FILL)});
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        return 'filled';
+      })()`).then((r) => console.log('  fill:', r));
+      await new Promise((r) => setTimeout(r, Number(process.env.NEXUS_FILL_WAIT) || 20000));
     }
 
     // NEXUS_SELECT picks the first non-empty option of the nth <select>, so a

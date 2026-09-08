@@ -13,7 +13,7 @@ import {
 } from '@/lib/storage';
 import { Badge, ErrorNote, Field, PageHeader } from '@/components/ui';
 import { AnalysisPanel, EngineNotice } from '@/components/AnalysisPanel';
-import { ModelPreview, renderThumbnail } from '@/components/ModelPreview';
+import { Visualizer } from '@/components/Visualizer';
 
 type Stage = 'idle' | 'hashing' | 'checking' | 'analyzing' | 'uploading' | 'saving' | 'done';
 
@@ -58,6 +58,9 @@ export function Upload() {
   const [engine, setEngine] = useState<EngineStatus | null>(null);
   // Kept for the preview and for rendering a thumbnail at submit time.
   const [meshBuffer, setMeshBuffer] = useState<ArrayBuffer | null>(null);
+  // Captured from the visualizer's own frame, so the stored thumbnail is the
+  // image the operator actually saw.
+  const [thumbnail, setThumbnail] = useState<Blob | null>(null);
 
   useEffect(() => {
     void window.nexus?.engine.status().then(setEngine);
@@ -93,6 +96,9 @@ export function Upload() {
 
     setFile(picked);
     if (!name) setName(nameFromFilename(picked.name));
+    // The visualizer reads STL and 3MF directly, so the original bytes are
+    // previewed rather than a converted copy.
+    setMeshBuffer(await picked.arrayBuffer());
 
     // Hash before uploading so a file already stored is never sent twice (§17).
     setStage('hashing');
@@ -117,17 +123,6 @@ export function Upload() {
     if (bridge && extension !== '.gcode') {
       setStage('analyzing');
       try {
-        // STL is drawn directly; anything else is converted by the engine,
-        // which already knows how to read every supported format.
-        if (extension === '.stl') {
-          setMeshBuffer(await picked.arrayBuffer());
-        } else {
-          try {
-            setMeshBuffer(await bridge.meshPreview(picked.name, await picked.arrayBuffer()));
-          } catch {
-            // Preview is optional; analysis below still runs.
-          }
-        }
 
         const result = await bridge.analyze(picked.name, await picked.arrayBuffer(), {
           bed_x_mm: 260,
@@ -225,9 +220,8 @@ export function Upload() {
 
       // Thumbnail is best-effort (§79): a model without one is still valid, so
       // a WebGL failure must not fail the upload.
-      if (meshBuffer && !duplicate) {
-        const thumbnail = await renderThumbnail(meshBuffer);
-        if (thumbnail) {
+      if (thumbnail && !duplicate) {
+        {
           const thumbKey = `${activeOrg.id}/models/${modelId}/v${version}/thumbnail.png`;
           try {
             await objectStore.upload(thumbKey, thumbnail, 'image/png');
@@ -343,7 +337,14 @@ export function Upload() {
         </div>
 
         {file && <EngineNotice status={engine} />}
-        {meshBuffer && <ModelPreview buffer={meshBuffer} />}
+        {meshBuffer && file && (
+          <Visualizer
+            buffer={meshBuffer}
+            filename={file.name}
+            height={300}
+            onSnapshot={setThumbnail}
+          />
+        )}
         {analysis && <AnalysisPanel analysis={analysis} />}
 
         {duplicate && (
