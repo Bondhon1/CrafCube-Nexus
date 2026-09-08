@@ -25,10 +25,10 @@ export const NAVIGATION: NavSection[] = [
     icon: 'production',
     capability: 'production.read',
     children: [
-      { label: 'Queue', path: '/production/queue', phase: 4 },
-      { label: 'Active Jobs', path: '/production/active', phase: 4 },
-      { label: 'Completed', path: '/production/completed', phase: 4 },
-      { label: 'Failed', path: '/production/failed', phase: 4 },
+      { label: 'Queue', path: '/production/queue' },
+      { label: 'Active Jobs', path: '/production/active' },
+      { label: 'Completed', path: '/production/completed' },
+      { label: 'Failed', path: '/production/failed' },
     ],
   },
   {
@@ -49,8 +49,8 @@ export const NAVIGATION: NavSection[] = [
     children: [
       { label: 'Filaments', path: '/inventory/filaments', phase: 1 },
       { label: 'Spools', path: '/inventory/spools', phase: 1 },
-      { label: 'Consumables', path: '/inventory/consumables', phase: 4 },
-      { label: 'Low Stock', path: '/inventory/low-stock', phase: 4 },
+      { label: 'Consumables', path: '/inventory/consumables', phase: 5 },
+      { label: 'Low Stock', path: '/inventory/low-stock', phase: 5 },
       { label: 'Transactions', path: '/inventory/transactions', phase: 1 },
     ],
   },
@@ -61,8 +61,8 @@ export const NAVIGATION: NavSection[] = [
     capability: 'printers.read',
     children: [
       { label: 'Machines', path: '/printers/machines', phase: 1 },
-      { label: 'Status', path: '/printers/status', phase: 4 },
-      { label: 'Maintenance', path: '/printers/maintenance', phase: 4 },
+      { label: 'Status', path: '/printers/status', phase: 5 },
+      { label: 'Maintenance', path: '/printers/maintenance', phase: 5 },
       { label: 'Profiles', path: '/printers/profiles' },
     ],
   },
@@ -115,7 +115,7 @@ export const NAVIGATION: NavSection[] = [
       { label: 'Audit Log', path: '/settings/audit' },
       { label: 'Pricing', path: '/settings/pricing' },
       { label: 'Cost Profiles', path: '/settings/cost-profiles' },
-      { label: 'Slicer', path: '/settings/slicer', phase: 4 },
+      { label: 'Slicer', path: '/settings/slicer', phase: 5 },
       { label: 'Notifications', path: '/settings/notifications', phase: 6 },
       { label: 'Storage', path: '/settings/storage', phase: 3 },
     ],
@@ -123,4 +123,4 @@ export const NAVIGATION: NavSection[] = [
 ];
 
 /** Phases already shipped — anything above renders as "coming in phase N". */
-export const CURRENT_PHASE = 3;
+export const CURRENT_PHASE = 4;

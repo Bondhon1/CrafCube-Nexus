@@ -18,6 +18,7 @@ import { Library } from '@/pages/models/Library';
 import { Upload } from '@/pages/models/Upload';
 import { CostProfiles } from '@/pages/settings/CostProfiles';
 import { Pricing } from '@/pages/settings/Pricing';
+import { Jobs } from '@/pages/production/Jobs';
 import { Profiles } from '@/pages/printers/Profiles';
 import { NAVIGATION } from '@/app/navigation';
 import { WindowControls } from '@/components/WindowControls';
@@ -57,6 +58,10 @@ const IMPLEMENTED = new Set([
   '/models/upload',
   '/settings/cost-profiles',
   '/settings/pricing',
+  '/production/queue',
+  '/production/active',
+  '/production/completed',
+  '/production/failed',
 ]);
 
 function Shell() {
@@ -75,6 +80,22 @@ function Shell() {
             <Route path="/inventory/filaments" element={<Filaments />} />
             <Route path="/inventory/spools" element={<Spools />} />
             <Route path="/inventory/transactions" element={<Transactions />} />
+            <Route path="/production/queue" element={
+              <Jobs view="queue" title="Queue"
+                    subtitle="Jobs waiting to print. Material is reserved when a job moves to Preparing." />
+            } />
+            <Route path="/production/active" element={
+              <Jobs view="active" title="Active jobs"
+                    subtitle="On the machine now. Completing a job records what it actually used." />
+            } />
+            <Route path="/production/completed" element={
+              <Jobs view="completed" title="Completed"
+                    subtitle="Finished jobs, with the gap between estimate and actual." />
+            } />
+            <Route path="/production/failed" element={
+              <Jobs view="failed" title="Failed & cancelled"
+                    subtitle="Failed prints deduct material as waste, keeping it out of production cost." />
+            } />
             <Route path="/settings/cost-profiles" element={<CostProfiles />} />
             <Route path="/settings/pricing" element={<Pricing />} />
             <Route path="/models/library" element={<Library />} />
