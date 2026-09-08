@@ -76,6 +76,15 @@
     @apply mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-400;
   }
 
+  /* Pinned to the bottom of a scrolling modal; negative margins reach the
+     card's padded edges so the bar spans the full width. */
+  .modal-actions {
+    @apply sticky bottom-0 -mx-5 -mb-5 mt-2 flex justify-end gap-2
+           border-t border-line bg-ink-850 px-5 py-4;
+    /* Reads as a bar the content scrolls beneath, not a seam in the layout. */
+    box-shadow: 0 -14px 22px -12px rgba(0, 0, 0, 0.9);
+  }
+
   .rule {
     @apply h-px w-10 bg-mint;
   }

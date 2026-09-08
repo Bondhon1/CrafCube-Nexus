@@ -161,6 +161,7 @@ function NewFilamentModal({
   onSaved: () => void;
 }) {
   const { activeOrg } = useSession();
+  const currency = activeOrg?.currency ?? '';
   const [name, setName] = useState('');
   const [materialId, setMaterialId] = useState(materials[0]?.id ?? '');
   const [colorName, setColorName] = useState('');
@@ -169,8 +170,41 @@ function NewFilamentModal({
   const [warn, setWarn] = useState('300');
   const [critical, setCritical] = useState('100');
   const [supplier, setSupplier] = useState('');
+
+  // Opening stock. Most filament is added because a spool was just bought, so
+  // the quantity and what it cost belong here rather than in a second trip.
+  const [addSpool, setAddSpool] = useState(true);
+  const [grams, setGrams] = useState('1000');
+  const [spoolCode, setSpoolCode] = useState('');
+  const [codeTouched, setCodeTouched] = useState(false);
+  const [productCost, setProductCost] = useState('');
+  const [shipping, setShipping] = useState('0');
+  const [tax, setTax] = useState('0');
+  const [other, setOther] = useState('0');
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Mirrors the generated columns so the real cost is visible before saving (§8).
+  const landed = [productCost, shipping, tax, other].reduce((a, v) => a + (Number(v) || 0), 0);
+  const perGram = Number(grams) > 0 ? landed / Number(grams) : 0;
+
+  // Suggest a code from material + colour. The RPC recomputes it on insert, so
+  // this is only a preview and cannot collide with a concurrent registration.
+  useEffect(() => {
+    if (codeTouched || !addSpool || !activeOrg || !materialId) return;
+    let cancelled = false;
+    void supabase
+      .rpc('suggest_spool_code', {
+        p_org: activeOrg.id,
+        p_material: materialId,
+        p_color: colorName || null,
+      })
+      .then(({ data }) => {
+        if (!cancelled && typeof data === 'string') setSpoolCode(data);
+      });
+    return () => { cancelled = true; };
+  }, [activeOrg, materialId, colorName, codeTouched, addSpool]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -178,16 +212,22 @@ function NewFilamentModal({
     setBusy(true);
     setError(null);
 
-    const { error: err } = await supabase.from('filament_products').insert({
-      organization_id: activeOrg.id,
-      material_id: materialId,
-      name: name.trim(),
-      color_name: colorName.trim() || null,
-      color_hex: colorHex,
-      diameter_mm: Number(diameter),
-      warn_grams: warn === '' ? null : Number(warn),
-      critical_grams: critical === '' ? null : Number(critical),
-      supplier: supplier.trim() || null,
+    const { error: err } = await supabase.rpc('create_filament_with_spool', {
+      p_org: activeOrg.id,
+      p_material: materialId,
+      p_name: name.trim(),
+      p_color_name: colorName.trim() || null,
+      p_color_hex: colorHex,
+      p_diameter: Number(diameter),
+      p_warn: warn === '' ? null : Number(warn),
+      p_critical: critical === '' ? null : Number(critical),
+      p_supplier: supplier.trim() || null,
+      p_spool_grams: addSpool ? Number(grams) : null,
+      p_spool_code: addSpool ? spoolCode.trim() || null : null,
+      p_product_cost: Number(productCost) || 0,
+      p_shipping: Number(shipping) || 0,
+      p_tax: Number(tax) || 0,
+      p_other: Number(other) || 0,
     });
 
     if (err) setError(err.message);
@@ -196,7 +236,7 @@ function NewFilamentModal({
   }
 
   return (
-    <Modal title="New filament" onClose={onClose}>
+    <Modal title="New filament" onClose={onClose} width="w-[560px]">
       <form onSubmit={submit} className="space-y-4">
         <ErrorNote message={error} />
         <Field label="Name">
@@ -239,10 +279,64 @@ function NewFilamentModal({
           <input className="field" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
         </Field>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="rounded-lg border border-line bg-ink-950/50 p-4">
+          <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-slate-200">
+            <input type="checkbox" checked={addSpool}
+                   onChange={(e) => setAddSpool(e.target.checked)} />
+            Add the first spool now
+          </label>
+
+          {addSpool ? (
+            <>
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                <Field label="Weight (g)">
+                  <input required type="number" step="0.001" min="0.001" className="field"
+                         value={grams} onChange={(e) => setGrams(e.target.value)} />
+                </Field>
+                <Field label="Spool code">
+                  <input required className="field font-mono" value={spoolCode}
+                         onChange={(e) => { setCodeTouched(true); setSpoolCode(e.target.value.toUpperCase()); }} />
+                </Field>
+              </div>
+
+              <p className="label mt-4">What it cost</p>
+              <div className="grid grid-cols-4 gap-3">
+                <Field label="Product">
+                  <input required type="number" step="0.01" min="0" className="field"
+                         value={productCost} onChange={(e) => setProductCost(e.target.value)} />
+                </Field>
+                <Field label="Shipping">
+                  <input type="number" step="0.01" min="0" className="field"
+                         value={shipping} onChange={(e) => setShipping(e.target.value)} />
+                </Field>
+                <Field label="Tax">
+                  <input type="number" step="0.01" min="0" className="field"
+                         value={tax} onChange={(e) => setTax(e.target.value)} />
+                </Field>
+                <Field label="Other">
+                  <input type="number" step="0.01" min="0" className="field"
+                         value={other} onChange={(e) => setOther(e.target.value)} />
+                </Field>
+              </div>
+
+              <div className="mt-3 flex justify-between border-t border-line pt-3 text-sm">
+                <span className="text-slate-400">
+                  Landed <Money value={landed} currency={currency} />
+                </span>
+                <span className="font-medium text-mint">{perGram.toFixed(3)} {currency}/g</span>
+              </div>
+            </>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500">
+              The filament is created with no stock. Register spools later from Inventory → Spools.
+            </p>
+          )}
+        </div>
+
+        <div className="modal-actions">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
           <button type="submit" disabled={busy} className="btn-primary">
-            {busy ? 'Saving…' : 'Create filament'}
+            {busy ? 'Saving…' : addSpool ? 'Create & add stock' : 'Create filament'}
           </button>
         </div>
       </form>

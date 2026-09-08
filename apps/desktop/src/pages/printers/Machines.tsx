@@ -233,7 +233,7 @@ function PrinterModal({
           <input className="field" value={materials} onChange={(e) => setMaterials(e.target.value)} />
         </Field>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
           <button type="submit" disabled={busy} className="btn-primary">
             {busy ? 'Saving…' : printer ? 'Save changes' : 'Create printer'}

@@ -68,6 +68,18 @@ app.whenReady().then(async () => {
     await win.loadFile(path.join(APP_DIR, 'dist', 'index.html'), { hash: route });
     // Give the route's queries time to resolve before capturing.
     await new Promise((r) => setTimeout(r, 3500));
+
+    // NEXUS_CLICK opens a dialog before capturing, so modals can be reviewed.
+    if (process.env.NEXUS_CLICK) {
+      await win.webContents.executeJavaScript(`(() => {
+        const label = ${JSON.stringify(process.env.NEXUS_CLICK)};
+        const el = [...document.querySelectorAll('button')]
+          .find((b) => b.textContent.trim() === label);
+        if (el) el.click();
+        return Boolean(el);
+      })()`);
+      await new Promise((r) => setTimeout(r, 1500));
+    }
     const image = await win.webContents.capturePage();
     const name = (route.replace(/^\//, '').replace(/\//g, '-') || 'dashboard') + '.png';
     fs.writeFileSync(path.join(outDir, name), image.toPNG());

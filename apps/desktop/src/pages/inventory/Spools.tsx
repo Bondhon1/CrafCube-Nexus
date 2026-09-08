@@ -263,7 +263,7 @@ function NewSpoolModal({
           </Field>
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
           <button type="submit" disabled={busy} className="btn-primary">
             {busy ? 'Saving…' : 'Register spool'}
@@ -356,7 +356,7 @@ function MovementModal({
           </p>
         )}
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="modal-actions">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
           <button type="submit" disabled={busy || magnitude === 0} className="btn-primary">
             {busy ? 'Recording…' : 'Record'}

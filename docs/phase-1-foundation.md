@@ -265,3 +265,38 @@ on a desktop in use.
 Models — library, upload, thumbnails, metadata — needs Cloudflare R2 credentials
 and is the first task of the next session. The navigation now labels those
 screens phase 2 rather than claiming phase 1 while showing a placeholder.
+
+## Adding filament records the quantity too (2026-09-08)
+
+The New Filament dialog created a product with no stock, so registering what was
+actually bought meant a second trip to Inventory → Spools. The product/spool
+split is right for the data model — a spool needs its own landed cost — but it
+should not cost two steps.
+
+The dialog now carries an "Add the first spool now" section (on by default) with
+weight, spool code and the landed-cost breakdown, showing cost per gram before
+saving.
+
+Two client-side inserts would leave an orphan product whenever the spool failed,
+so this goes through `create_filament_with_spool()` — one transaction, product
+and spool together. It is `SECURITY DEFINER`, so it re-checks
+`has_role_at_least(org, 'production_manager')` explicitly rather than relying on
+the RLS it bypasses.
+
+Spool codes are suggested from material and colour (`PLA-WHI-001`) by
+`suggest_spool_code()`. The suggestion is only a preview: the RPC recomputes the
+number at insert time, so two people registering spools at once cannot collide.
+
+### Verified against the live database
+
+| Check | Result |
+|---|---|
+| First suggestion for PLA+ White is `PLA-WHI-001` | pass |
+| One call creates product, spool, and the opening PURCHASE row | pass |
+| Landed 1200+100+50 over 1000 g gives 1.35/g | pass |
+| Stock view reflects the new spool immediately | pass |
+| Next suggestion increments to `-002` | pass |
+| Duplicate spool code rolls back — no orphan product | pass |
+| Null weight creates the product with no spool | pass |
+| Viewer blocked from the RPC and from a direct insert | pass |
+| Viewer can still read materials | pass |
