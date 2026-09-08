@@ -23,12 +23,15 @@ means adding one implementation; nothing above that file changes.
 
 | Backend | Free tier | Card needed | Max file | Authorization |
 |---|---|---|---|---|
-| **Supabase Storage** *(in use)* | 1 GB storage, 5 GB egress | No | **50 MB** | RLS — the same policies as the database |
-| **Backblaze B2** | 10 GB storage, egress 3× stored | No | 5 TB (S3 multipart) | S3 keys — needs a signing service |
+| **Supabase Storage** *(current default)* | 1 GB storage, 5 GB egress | No | **50 MB** | RLS — the same policies as the database |
+| **Backblaze B2** *(selected)* | 10 GB storage, egress 3× stored | No | 5 TB (S3 multipart) | S3 keys — needs a signing service |
 | Cloudinary | 25 credits/month (~25 GB) | No | **10 MB raw** | Signed URLs — needs a signing service |
 | Cloudflare R2 (§44) | 10 GB, free egress | **Yes** | 5 TB | S3 keys — needs a signing service |
 
 ### The deciding factor is authorization, not capacity
+
+B2 was chosen for capacity and headroom; the note below explains what that
+costs, and how the signing function pays it back.
 
 §77 is explicit: *"the actual authorization should be database-driven."*
 
@@ -101,9 +104,16 @@ Vite would inline it into every install. It lives only in the function's
 secrets.
 
 ```bash
-export SUPABASE_ACCESS_TOKEN=<personal access token>   # Account → Access Tokens
+# Account → Access Tokens on supabase.com
+export SUPABASE_ACCESS_TOKEN=<personal access token>
+
 supabase functions deploy storage-sign --project-ref <project-ref>
-supabase secrets set --project-ref <project-ref>   B2_REGION=us-west-004   B2_BUCKET=crafcube-nexus   B2_KEY_ID=<keyID>   B2_APPLICATION_KEY=<applicationKey>
+
+supabase secrets set --project-ref <project-ref> \
+  B2_REGION=us-west-004 \
+  B2_BUCKET=crafcube-nexus \
+  B2_KEY_ID=<keyID> \
+  B2_APPLICATION_KEY=<applicationKey>
 ```
 
 ### 3. Point the app at it
