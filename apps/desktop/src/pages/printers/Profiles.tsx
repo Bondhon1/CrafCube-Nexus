@@ -61,7 +61,7 @@ export function Profiles() {
         subtitle="Quality presets per printer. Phase 2 maps these onto real slicer profiles."
         actions={
           <>
-            <select className="field w-56" value={printerId}
+            <select className="field w-40 sm:w-56" value={printerId}
                     onChange={(e) => setPrinterId(e.target.value)}>
               {printers.length === 0 && <option value="">No printers</option>}
               {printers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}

@@ -38,8 +38,8 @@ app.whenReady().then(async () => {
   const password = process.env.NEXUS_PASSWORD;
 
   const win = new BrowserWindow({
-    width: 1500,
-    height: 900,
+    width: Number(process.env.NEXUS_WIDTH) || 1500,
+    height: Number(process.env.NEXUS_HEIGHT) || 900,
     show: false,
     backgroundColor: '#000f16',
     webPreferences: {

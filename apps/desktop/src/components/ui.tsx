@@ -11,8 +11,10 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex items-start justify-between gap-4">
-      <div>
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      {/* min-w-0 lets the heading block shrink so long titles wrap instead of
+          pushing the actions off the row. */}
+      <div className="min-w-0 flex-1">
         <h1 className="text-xl font-semibold text-slate-100">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-400">{subtitle}</p>}
       </div>

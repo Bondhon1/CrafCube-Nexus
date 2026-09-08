@@ -47,10 +47,11 @@ export function TitleBar() {
                 type="button"
                 onClick={() => { setOrgOpen((v) => !v); setMenuOpen(false); }}
                 disabled={memberships.length <= 1}
-                className="flex items-center gap-1.5 rounded px-2 py-1 text-[13px] text-slate-300
-                           transition-colors hover:bg-white/5 disabled:hover:bg-transparent"
+                className="flex max-w-[200px] items-center gap-1.5 rounded px-2 py-1 text-[13px]
+                           text-slate-300 transition-colors hover:bg-white/5
+                           disabled:hover:bg-transparent"
               >
-                {activeOrg.name}
+                <span className="truncate">{activeOrg.name}</span>
                 {memberships.length > 1 && <Chevron />}
               </button>
 

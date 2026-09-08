@@ -74,9 +74,12 @@
     @apply rounded-2xl border border-mint/25 bg-ink-900/55 p-7 shadow-panel backdrop-blur-xl;
   }
 
+  /* whitespace-nowrap matters: without it a two-word label wraps when the
+     window narrows and the button collapses into a tall square. shrink-0 stops
+     a neighbouring fixed-width input from squeezing it in the first place. */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5
-           text-sm font-semibold transition-all duration-150
+    @apply inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap
+           rounded-lg px-4 py-2.5 text-sm font-semibold transition-all duration-150
            disabled:cursor-not-allowed disabled:opacity-40;
   }
   .btn-primary {

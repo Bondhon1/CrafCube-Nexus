@@ -48,7 +48,7 @@ export function Transactions() {
         subtitle="The filament ledger. Entries are append-only — corrections are recorded as adjustments."
         actions={
           <select
-            className="field w-56"
+            className="field w-40 sm:w-56"
             value={filter}
             onChange={(e) => setFilter(e.target.value as InventoryTxnType | 'all')}
           >

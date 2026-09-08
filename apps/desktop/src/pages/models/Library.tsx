@@ -5,6 +5,7 @@ import { GENERATION_METHOD_LABELS, MODEL_LICENSE_LABELS } from '@crafcube/types'
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/app/SessionProvider';
 import { formatBytes, objectStore } from '@/lib/storage';
+import { ModelsIcon } from '@/components/icons';
 import {
   Badge, EmptyRow, ErrorNote, Modal, PageHeader, Panel, Row, Table, Td, Th,
 } from '@/components/ui';
@@ -100,7 +101,7 @@ export function Library() {
         actions={
           <>
             <input
-              className="field w-56"
+              className="field w-40 sm:w-56"
               placeholder="Search name, category, tag"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -150,14 +151,15 @@ export function Library() {
                         className="h-10 w-10 shrink-0 rounded border border-line bg-ink-950 object-cover"
                       />
                     ) : (
-                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded border border-line bg-ink-950 text-xs text-slate-700">
-                        ⬢
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded
+                                      border border-line bg-ink-950 text-slate-700">
+                        <ModelsIcon size={16} />
                       </div>
                     )}
                     <div>
-                  <div className="font-medium text-slate-200">{m.name}</div>
+                  <div className="whitespace-nowrap font-medium text-slate-200">{m.name}</div>
                   {latest?.width_mm ? (
-                    <div className="text-xs text-slate-500">
+                    <div className="whitespace-nowrap text-xs text-slate-500">
                       {latest.width_mm} × {latest.depth_mm} × {latest.height_mm} mm
                     </div>
                   ) : (

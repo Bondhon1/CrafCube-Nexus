@@ -85,7 +85,7 @@ export function Pricing() {
         subtitle="Rules are data, not hidden logic — every adjustment shows what it did and why."
         actions={
           <>
-            <select className="field w-52" value={profileId}
+            <select className="field w-40 sm:w-52" value={profileId}
                     onChange={(e) => setProfileId(e.target.value)}>
               {profiles.length === 0 && <option value="">No cost profiles</option>}
               {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
