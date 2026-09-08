@@ -55,6 +55,18 @@ function organizationFromKey(key: string): string | null {
   return UUID_RE.test(first) ? first : null;
 }
 
+/**
+ * B2 shows the endpoint as `s3.us-east-005.backblazeb2.com` while the signer
+ * needs the bare region, so accept either and pull the region out. Trailing
+ * whitespace from a pasted value would otherwise corrupt every signature.
+ */
+function normalizeRegion(value: string | undefined): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  const match = raw.match(/[a-z]{2,}-[a-z]+-\d{3,4}/i);
+  return match ? match[0].toLowerCase() : raw;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS });
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
@@ -100,10 +112,10 @@ Deno.serve(async (req) => {
   if (rpcError) return json({ error: rpcError.message }, 500);
   if (allowed !== true) return json({ error: 'not permitted for this organization' }, 403);
 
-  const region = Deno.env.get('B2_REGION');
-  const bucket = Deno.env.get('B2_BUCKET');
-  const accessKeyId = Deno.env.get('B2_KEY_ID');
-  const secretAccessKey = Deno.env.get('B2_APPLICATION_KEY');
+  const region = normalizeRegion(Deno.env.get('B2_REGION'));
+  const bucket = Deno.env.get('B2_BUCKET')?.trim();
+  const accessKeyId = Deno.env.get('B2_KEY_ID')?.trim();
+  const secretAccessKey = Deno.env.get('B2_APPLICATION_KEY')?.trim();
   if (!region || !bucket || !accessKeyId || !secretAccessKey) {
     return json({ error: 'storage backend is not configured' }, 500);
   }

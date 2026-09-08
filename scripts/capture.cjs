@@ -8,7 +8,7 @@
  *
  * Usage: electron scripts/capture.cjs <outDir> <route> [route...]
  */
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -25,6 +25,12 @@ function env() {
   return out;
 }
 
+// The renderer's title bar probes these; the real handlers live in main.ts.
+ipcMain.handle('window:is-maximized', () => false);
+ipcMain.handle('window:minimize', () => {});
+ipcMain.handle('window:toggle-maximize', () => false);
+ipcMain.handle('window:close', () => {});
+
 app.whenReady().then(async () => {
   const { VITE_SUPABASE_URL: url, VITE_SUPABASE_ANON_KEY: key } = env();
   const ref = new URL(url).hostname.split('.')[0];
@@ -36,7 +42,14 @@ app.whenReady().then(async () => {
     height: 900,
     show: false,
     backgroundColor: '#000f16',
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      // Load the real preload so window.nexus exists and the page behaves
+      // exactly as it does in the app, rather than in a degraded mode.
+      preload: path.join(APP_DIR, 'dist-electron', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
   });
 
   await win.loadFile(path.join(APP_DIR, 'dist', 'index.html'));

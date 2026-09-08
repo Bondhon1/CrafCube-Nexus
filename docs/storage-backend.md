@@ -1,7 +1,8 @@
 # Storage backend decision
 
-**Status:** Backblaze B2 implemented, awaiting credentials. Supabase Storage
-remains the default until `VITE_STORAGE_BACKEND=b2` is set.
+**Status:** **Backblaze B2 live** — deployed and verified 2026-09-08, region
+`us-east-005`, bucket `crafcube-nexus`. Supabase Storage remains implemented and
+selectable via `VITE_STORAGE_BACKEND=supabase`.
 **Date:** 2026-09-08
 **Affects:** design doc §44 (storage architecture), §77 (file security), §78 (deduplication)
 
@@ -80,9 +81,24 @@ The trigger to migrate is whichever comes first:
 - **5 GB egress/month.** Only counts downloads, and the desktop client caches
   nothing yet, so re-downloading the same model repeatedly is the risk.
 
+## Verified on B2 (2026-09-08)
+
+| Check | Result |
+|---|---|
+| Unauthenticated call to `storage-sign` rejected (401) | pass |
+| Signed PUT accepted by B2 | pass |
+| Signed GET returns byte-identical content | pass |
+| Another organization's prefix refused (403) | pass |
+| `../`, absolute and non-UUID prefixes refused (400) | pass |
+| 3 MB round trip through the IPC bridge, hash unchanged | pass |
+
+The last row matters on its own: transfers cross a process boundary as an
+`ArrayBuffer`, and a structured-clone problem would show up as silent truncation
+rather than an error. `scripts/verify-b2.cjs` re-runs that check.
+
 ## Switching to B2
 
-Steps 1-3 are built. Only the credentials and the deploy remain.
+Steps 1-3 are built.
 
 ### 1. Create the bucket and key (no card)
 
