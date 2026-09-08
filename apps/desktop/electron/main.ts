@@ -1,23 +1,36 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
+
+const PREFERRED_WIDTH = 1440;
+const PREFERRED_HEIGHT = 900;
 
 let window: BrowserWindow | null = null;
 
 function createWindow() {
+  // Never open larger than the display: the preferred size exceeds common
+  // 1366x768 and 1536x864 laptop panels, which would push the layout offscreen.
+  const { width: availWidth, height: availHeight } =
+    screen.getPrimaryDisplay().workAreaSize;
+  const width = Math.min(PREFERRED_WIDTH, availWidth - 40);
+  const height = Math.min(PREFERRED_HEIGHT, availHeight - 40);
+
   window = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1100,
-    minHeight: 700,
-    backgroundColor: '#0e1117',
+    width,
+    height,
+    center: true,
+    minWidth: Math.min(1100, width),
+    minHeight: Math.min(700, height),
+    backgroundColor: '#000f16',
     show: false,
-    titleBarStyle: 'default',
+    // The app draws its own title bar and window buttons.
+    frame: false,
+    titleBarStyle: 'hidden',
+    // macOS keeps its traffic lights; only Windows/Linux get our buttons.
+    trafficLightPosition: { x: 16, y: 14 },
     webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -25,6 +38,13 @@ function createWindow() {
   });
 
   window.once('ready-to-show', () => window?.show());
+
+  // Keep the renderer's maximise button in sync with OS-level changes
+  // (snap, double-click on the drag region, keyboard shortcuts).
+  const emitMaximized = () =>
+    window?.webContents.send('window:maximized-changed', window.isMaximized());
+  window.on('maximize', emitMaximized);
+  window.on('unmaximize', emitMaximized);
 
   // External links open in the user's browser, never inside the shell.
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -40,7 +60,30 @@ function createWindow() {
   }
 }
 
-// Liveness probe the renderer uses to confirm the bridge is wired.
+// Window controls. Each resolves the caller's own window so the handlers stay
+// correct if a second window is ever added.
+function callerWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow | null {
+  return BrowserWindow.fromWebContents(event.sender);
+}
+
+ipcMain.handle('window:minimize', (event) => {
+  callerWindow(event)?.minimize();
+});
+
+ipcMain.handle('window:toggle-maximize', (event) => {
+  const win = callerWindow(event);
+  if (!win) return false;
+  if (win.isMaximized()) win.unmaximize();
+  else win.maximize();
+  return win.isMaximized();
+});
+
+ipcMain.handle('window:close', (event) => {
+  callerWindow(event)?.close();
+});
+
+ipcMain.handle('window:is-maximized', (event) => callerWindow(event)?.isMaximized() ?? false);
+
 ipcMain.handle('nexus:ping', () => ({ ok: true, at: new Date().toISOString() }));
 
 app.whenReady().then(createWindow);

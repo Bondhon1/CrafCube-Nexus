@@ -2,7 +2,6 @@
   "name": "@crafcube/desktop",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -29,6 +28,7 @@
     "typescript": "^5.7.2",
     "vite": "^6.0.3",
     "vite-plugin-electron": "^0.29.0",
-    "vite-plugin-electron-renderer": "^0.14.6"
+    "vite-plugin-electron-renderer": "^0.14.6",
+    "@types/node": "^22.10.2"
   }
 }

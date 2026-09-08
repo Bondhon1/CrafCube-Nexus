@@ -36,7 +36,7 @@ export function Dashboard() {
       <div className="card">
         <h2 className="text-sm font-semibold text-slate-200">Roadmap</h2>
         <ul className="mt-3 space-y-2 text-sm text-slate-400">
-          <li><span className="text-accent">Phase 1</span> — auth, organizations, roles, audit log <span className="text-accent">(current)</span></li>
+          <li><span className="text-mint">Phase 1</span> — auth, organizations, roles, audit log <span className="text-mint">(current)</span></li>
           <li>Phase 2 — model upload, geometry analysis, slicer integration</li>
           <li>Phase 3 — costing and pricing engine</li>
           <li>Phase 4 — print jobs, queue, inventory consumption</li>

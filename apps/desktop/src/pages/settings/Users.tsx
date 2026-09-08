@@ -51,7 +51,7 @@ export function Users() {
       <div className="card p-0">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-surface-border text-left text-xs uppercase tracking-wide text-slate-500">
+            <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="px-4 py-3 font-medium">Member</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Role</th>
@@ -65,12 +65,12 @@ export function Users() {
               <tr><td colSpan={3} className="px-4 py-6 text-slate-500">No members.</td></tr>
             )}
             {members.map((m) => (
-              <tr key={m.id} className="border-b border-surface-border/60 last:border-0">
+              <tr key={m.id} className="border-b border-line/60 last:border-0">
                 <td className="px-4 py-3">
                   <div className="font-medium">{m.profile?.full_name ?? m.profile?.email ?? m.user_id}</div>
                   <div className="text-xs text-slate-500">
                     {m.profile?.email}
-                    {m.user_id === user?.id && <span className="ml-2 text-accent">you</span>}
+                    {m.user_id === user?.id && <span className="ml-2 text-mint">you</span>}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-slate-400">{m.status}</td>
@@ -79,7 +79,7 @@ export function Users() {
                     <select
                       value={m.role}
                       onChange={(e) => void changeRole(m.id, e.target.value as Role)}
-                      className="rounded-md border border-surface-border bg-surface px-2 py-1 text-sm"
+                      className="rounded-md border border-line bg-ink-950 px-2 py-1 text-sm"
                     >
                       {[...ROLES].reverse().map((r) => (
                         <option key={r} value={r}>{ROLE_LABELS[r]}</option>

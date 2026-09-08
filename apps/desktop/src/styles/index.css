@@ -1,35 +1,82 @@
 @tailwind base;
-@tailwind components;
 @tailwind utilities;
+@tailwind components;
 
 @layer base {
-  html, body, #root { height: 100%; }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
   body {
-    @apply bg-surface text-slate-200 font-sans antialiased;
+    @apply bg-ink-900 text-slate-200 font-sans antialiased;
+    /* The frameless window draws its own chrome; never bounce the whole app. */
+    overflow: hidden;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full border-2 border-transparent bg-line bg-clip-content;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-line-bright bg-clip-content;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
   }
 }
 
 @layer components {
-  .card {
-    @apply rounded-lg border border-surface-border bg-surface-raised p-5;
+  /* Frameless-window drag regions. */
+  .drag {
+    -webkit-app-region: drag;
   }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  .card {
+    @apply rounded-xl border border-line bg-ink-850/80 p-5 shadow-panel;
+  }
+
+  /* Auth panels sit on photography, so they need real blur, not just alpha. */
+  .glass {
+    @apply rounded-2xl border border-mint/25 bg-ink-900/55 p-7 shadow-panel backdrop-blur-xl;
+  }
+
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2
-           text-sm font-medium transition-colors disabled:opacity-50
-           disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5
+           text-sm font-semibold transition-all duration-150
+           disabled:cursor-not-allowed disabled:opacity-40;
   }
   .btn-primary {
-    @apply btn bg-accent text-slate-950 hover:bg-accent/90;
+    @apply btn bg-mint text-ink-950 hover:bg-mint-500 hover:shadow-mint-ring
+           active:translate-y-px;
   }
   .btn-ghost {
-    @apply btn border border-surface-border text-slate-300 hover:bg-white/5;
+    @apply btn border border-line text-slate-300 hover:border-mint/40 hover:text-mint;
   }
+
   .field {
-    @apply w-full rounded-md border border-surface-border bg-surface px-3 py-2
-           text-sm outline-none placeholder:text-slate-600
-           focus:border-accent/60 focus:ring-1 focus:ring-accent/40;
+    @apply w-full rounded-lg border border-line bg-ink-950/60 px-3 py-2.5 text-sm
+           text-slate-100 outline-none transition-colors
+           placeholder:text-slate-600
+           focus:border-mint/60 focus:ring-1 focus:ring-mint/30;
   }
+  /* Paired with a leading icon inside a relative wrapper. */
+  .field-icon {
+    @apply pl-10;
+  }
+
   .label {
-    @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-400;
+    @apply mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-400;
+  }
+
+  .rule {
+    @apply h-px w-10 bg-mint;
   }
 }

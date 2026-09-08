@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import {
+  AuthLayout,
+  IconField,
+  LockIcon,
+  MailIcon,
+  UserIcon,
+} from '@/components/AuthLayout';
 
 type Step = 'signin' | 'signup' | 'confirm';
 
@@ -102,15 +109,15 @@ export function SignIn() {
 
   if (step === 'confirm') {
     return (
-      <div className="grid h-full place-items-center bg-surface">
-        <form onSubmit={submitCode} className="card w-[380px]">
-          <h1 className="font-mono text-lg font-semibold text-accent">Confirm your email</h1>
-          <p className="mt-1 text-sm text-slate-400">
+      <AuthLayout step="manage">
+        <form onSubmit={submitCode} className="glass w-[380px] animate-fade-up">
+          <h1 className="text-lg font-semibold text-mint">Confirm your email</h1>
+          <p className="mt-1.5 text-sm text-slate-400">
             Enter the {CODE_LENGTH}-digit code we sent to{' '}
             <span className="text-slate-200">{email}</span>.
           </p>
 
-          <div className="mt-5">
+          <div className="mt-6">
             <label className="label" htmlFor="code">Confirmation code</label>
             <input
               id="code"
@@ -118,15 +125,14 @@ export function SignIn() {
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={CODE_LENGTH}
-              className="field text-center font-mono text-xl tracking-[0.4em]"
+              className="field text-center font-mono text-2xl tracking-[0.5em]"
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
               placeholder="000000"
             />
           </div>
 
-          {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-          {notice && !error && <p className="mt-3 text-sm text-accent">{notice}</p>}
+          <Feedback error={error} notice={notice} />
 
           <button
             type="submit"
@@ -136,99 +142,126 @@ export function SignIn() {
             {busy ? 'Verifying…' : 'Confirm'}
           </button>
 
-          <div className="mt-3 flex items-center justify-between text-xs">
+          <div className="mt-4 flex items-center justify-between text-xs">
             <button
               type="button"
               onClick={() => void resend()}
               disabled={busy || cooldown > 0}
-              className="text-slate-400 hover:text-slate-200 disabled:opacity-50"
+              className="text-slate-400 transition-colors hover:text-mint disabled:opacity-40"
             >
               {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
             </button>
             <button
               type="button"
-              onClick={() => {
-                setStep('signin');
-                setError(null);
-                setNotice(null);
-              }}
-              className="text-slate-500 hover:text-slate-300"
+              onClick={() => { setStep('signin'); setError(null); setNotice(null); }}
+              className="text-slate-500 transition-colors hover:text-slate-300"
             >
               Use a different address
             </button>
           </div>
         </form>
-      </div>
+      </AuthLayout>
     );
   }
 
   return (
-    <div className="grid h-full place-items-center bg-surface">
-      <form onSubmit={submitCredentials} className="card w-[380px]">
-        <h1 className="font-mono text-lg font-semibold text-accent">CrafCube Nexus</h1>
-        <p className="mt-1 text-sm text-slate-400">
+    <AuthLayout step="manage">
+      <form onSubmit={submitCredentials} className="glass w-[380px] animate-fade-up">
+        <h1 className="text-lg font-semibold">
+          <span className="text-white">Craf</span>
+          <span className="text-mint">Cube</span>
+          <span className="ml-1.5 font-light tracking-wide text-slate-300">Nexus</span>
+        </h1>
+        <p className="mt-1.5 text-sm text-slate-400">
           {step === 'signin' ? 'Sign in to your workspace.' : 'Create your account.'}
         </p>
 
-        <div className="mt-5 space-y-3">
+        <div className="mt-6 space-y-4">
           {step === 'signup' && (
             <div>
               <label className="label" htmlFor="name">Full name</label>
-              <input
-                id="name"
-                className="field"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                autoComplete="name"
-              />
+              <IconField icon={<UserIcon />}>
+                <input
+                  id="name"
+                  className="field field-icon"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  autoComplete="name"
+                />
+              </IconField>
             </div>
           )}
           <div>
             <label className="label" htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              required
-              className="field"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-            />
+            <IconField icon={<MailIcon />}>
+              <input
+                id="email"
+                type="email"
+                required
+                autoFocus
+                className="field field-icon"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+              />
+            </IconField>
           </div>
           <div>
             <label className="label" htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              required
-              minLength={8}
-              className="field"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete={step === 'signin' ? 'current-password' : 'new-password'}
-            />
+            <IconField icon={<LockIcon />}>
+              <input
+                id="password"
+                type="password"
+                required
+                minLength={8}
+                className="field field-icon"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete={step === 'signin' ? 'current-password' : 'new-password'}
+              />
+            </IconField>
           </div>
         </div>
 
-        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-        {notice && !error && <p className="mt-3 text-sm text-accent">{notice}</p>}
+        <Feedback error={error} notice={notice} />
 
-        <button type="submit" disabled={busy} className="btn-primary mt-5 w-full">
+        <button type="submit" disabled={busy} className="btn-primary mt-6 w-full">
           {busy ? 'Working…' : step === 'signin' ? 'Sign in' : 'Create account'}
         </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            setStep(step === 'signin' ? 'signup' : 'signin');
-            setError(null);
-            setNotice(null);
-          }}
-          className="mt-3 w-full text-center text-xs text-slate-400 hover:text-slate-200"
-        >
-          {step === 'signin' ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
-        </button>
+        <p className="mt-4 text-center text-xs text-slate-500">
+          {step === 'signin' ? 'Need an account?' : 'Already have an account?'}{' '}
+          <button
+            type="button"
+            onClick={() => {
+              setStep(step === 'signin' ? 'signup' : 'signin');
+              setError(null);
+              setNotice(null);
+            }}
+            className="font-medium text-mint transition-colors hover:text-mint-500"
+          >
+            {step === 'signin' ? 'Sign up' : 'Sign in'}
+          </button>
+        </p>
       </form>
-    </div>
+    </AuthLayout>
   );
+}
+
+function Feedback({ error, notice }: { error: string | null; notice: string | null }) {
+  if (error) {
+    return (
+      <p className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+        {error}
+      </p>
+    );
+  }
+  if (notice) {
+    return (
+      <p className="mt-4 rounded-md border border-mint/25 bg-mint/10 px-3 py-2 text-sm text-mint">
+        {notice}
+      </p>
+    );
+  }
+  return null;
 }

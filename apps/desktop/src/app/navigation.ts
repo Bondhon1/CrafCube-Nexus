@@ -82,7 +82,7 @@ export const NAVIGATION: NavSection[] = [
   {
     label: 'Finance',
     path: '/finance',
-    icon: '₿',
+    icon: '◧',
     capability: 'finance.read',
     children: [
       { label: 'Transactions', path: '/finance/transactions', phase: 5 },

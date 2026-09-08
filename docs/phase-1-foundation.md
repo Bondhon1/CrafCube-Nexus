@@ -142,3 +142,51 @@ SMTP (Resend or Brevo both have adequate free tiers), then add
 
 This is a development posture. Confirmation should be back on before the system
 handles real customer data.
+
+## UI pass — brand shell (2026-09-07)
+
+The interface was rebuilt against the brand artwork in `docs/brand/`.
+
+**Palette** sampled from the artwork rather than guessed: near-black teal ground
+(`#000f16`) with a mint accent (`#0df8d0`), exposed as `ink-*`, `line-*` and
+`mint-*` scales in the Tailwind config.
+
+**Background.** `background-plate.png` carries the brand lockup and a
+"CD Print Starts Management System" subtitle baked into the pixels, plus a
+MANAGE/PRINT/DELIVER rail. Left in place these fought the app's own lockup and
+named the wrong product, so those regions are inpainted — iterated
+blur-and-composite through a feathered mask, which diffuses the surrounding
+gradient inward instead of smearing the letterforms. The result ships as
+`src/assets/auth-bg.webp`: 1.44 MB PNG down to 56 KB.
+
+**Frameless window.** `frame: false` with the app drawing its own title bar:
+drag regions via `-webkit-app-region`, brand, organization switcher, user menu,
+and custom minimise / maximise / close buttons. The maximise button follows
+OS-level changes through a `maximize`/`unmaximize` listener, so snapping or
+double-clicking the drag region keeps the glyph correct. macOS keeps its native
+traffic lights; the custom buttons render on Windows and Linux only. The setup
+and loading screens carry the controls too — otherwise a failed launch would
+leave an unclosable window.
+
+**Default window size** is clamped to the display's work area. The preferred
+1440x900 overflows 1366x768 and 1536x864 laptop panels, pushing the sign-in card
+off screen.
+
+### Module format
+
+The desktop package is CommonJS. `vite-plugin-electron` derives its output
+format from the package `type` field and ignores per-entry format overrides, so
+with `"type": "module"` both bundles came out as ESM — and a sandboxed preload
+cannot be ESM. `postcss.config` and `tailwind.config` are `.mjs` so they keep
+`export default`.
+
+### Verified by running the app
+
+Launched the built app and captured the real window: sign-in renders over the
+cleaned artwork with the custom controls, and signing in reaches the shell with
+the title bar, sidebar and dashboard intact.
+
+Note for future automation: this environment sets `ELECTRON_RUN_AS_NODE=1`,
+which makes `electron.exe` run as plain Node — `require('electron')` then
+returns the binary path string and the app dies with a confusing
+`Cannot read properties of undefined` error. Unset it before launching.

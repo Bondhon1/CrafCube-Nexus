@@ -59,7 +59,7 @@ export function AuditLog() {
       <div className="card p-0">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-surface-border text-left text-xs uppercase tracking-wide text-slate-500">
+            <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-slate-500">
               <th className="px-4 py-3 font-medium">When</th>
               <th className="px-4 py-3 font-medium">Entity</th>
               <th className="px-4 py-3 font-medium">Change</th>
@@ -71,7 +71,7 @@ export function AuditLog() {
               <tr><td colSpan={3} className="px-4 py-6 text-slate-500">Nothing logged yet.</td></tr>
             )}
             {rows.map((row) => (
-              <tr key={row.id} className="border-b border-surface-border/60 align-top last:border-0">
+              <tr key={row.id} className="border-b border-line/60 align-top last:border-0">
                 <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-500">
                   {new Date(row.created_at).toLocaleString()}
                 </td>
