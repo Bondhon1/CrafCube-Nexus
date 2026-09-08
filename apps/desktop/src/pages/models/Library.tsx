@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Model, ModelFile, ModelVersion } from '@crafcube/types';
 import { GENERATION_METHOD_LABELS, MODEL_LICENSE_LABELS } from '@crafcube/types';
@@ -15,6 +15,45 @@ interface VersionWithFiles extends ModelVersion {
 
 interface ModelRow extends Model {
   versions: VersionWithFiles[];
+}
+
+/** Signed thumbnail URLs, resolved once per library load. */
+function useThumbnails(rows: ModelRow[]): Record<string, string> {
+  const [urls, setUrls] = useState<Record<string, string>>({});
+
+  const keys = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const model of rows) {
+      const latest = [...model.versions].sort((a, b) => b.version - a.version)[0];
+      const thumb = latest?.files.find((f) => f.kind === 'thumbnail');
+      if (thumb) out[model.id] = thumb.storage_key;
+    }
+    return out;
+  }, [rows]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const entries = Object.entries(keys);
+    if (entries.length === 0) return;
+
+    void Promise.all(
+      entries.map(async ([id, key]) => {
+        try {
+          // Long enough to browse without re-signing on every render.
+          return [id, await objectStore.signedUrl(key, 3600)] as const;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      setUrls(Object.fromEntries(results.filter((r): r is [string, string] => r !== null)));
+    });
+
+    return () => { cancelled = true; };
+  }, [keys]);
+
+  return urls;
 }
 
 export function Library() {
@@ -40,6 +79,8 @@ export function Library() {
   }, [activeOrg]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const thumbnails = useThumbnails(rows);
 
   const visible = rows.filter((m) => {
     const q = query.trim().toLowerCase();
@@ -101,6 +142,19 @@ export function Library() {
             return (
               <Row key={m.id}>
                 <Td>
+                  <div className="flex items-center gap-3">
+                    {thumbnails[m.id] ? (
+                      <img
+                        src={thumbnails[m.id]}
+                        alt=""
+                        className="h-10 w-10 shrink-0 rounded border border-line bg-ink-950 object-cover"
+                      />
+                    ) : (
+                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded border border-line bg-ink-950 text-xs text-slate-700">
+                        ⬢
+                      </div>
+                    )}
+                    <div>
                   <div className="font-medium text-slate-200">{m.name}</div>
                   {latest?.width_mm ? (
                     <div className="text-xs text-slate-500">
@@ -109,6 +163,8 @@ export function Library() {
                   ) : (
                     <div className="text-xs text-slate-600">Not analysed yet</div>
                   )}
+                    </div>
+                  </div>
                 </Td>
                 <Td className="text-slate-400">{m.category ?? '—'}</Td>
                 <Td><Badge>{GENERATION_METHOD_LABELS[m.generation_method]}</Badge></Td>

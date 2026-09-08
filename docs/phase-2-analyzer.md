@@ -147,3 +147,46 @@ all. A non-millimetre unit raises a warning, since a metre-unit model would
 misprice by a factor of a thousand.
 
 Tests: 45.
+
+## 3D preview and thumbnails (§79, §80)
+
+Rendered in the renderer with three.js rather than round-tripping through the
+engine: the bytes are already in hand at upload time, and a WebGL render is far
+cheaper than shipping an image back over HTTP.
+
+Binary and ASCII STL are distinguished by checking whether the declared triangle
+count matches the file length exactly. Sniffing the leading `solid` keyword is
+unreliable — plenty of binary exporters write it too, and misreading a binary
+file as ASCII yields an empty mesh rather than an error.
+
+ASCII face normals are recomputed rather than trusted, since inconsistent
+exporter normals show up as black patches under lighting.
+
+Both preview and thumbnail are best-effort: a WebGL failure never fails an
+upload. Contexts and geometries are disposed on unmount, because a leaked
+context per upload eventually stops the app rendering anything at all.
+
+### Verified
+
+`scripts/verify-preview.cjs` loads a real STL into the running upload screen
+through the file input and reads the rendered values back out of the DOM:
+
+| Check | Result |
+|---|---|
+| 3D preview canvas rendered | pass |
+| Analysis panel shown | pass |
+| Dimensions 60 × 60 × 80 mm match the source | pass |
+| Volume 96 cm³ — exactly ⅓ of the bounding box for a pyramid | pass |
+| 6 triangles counted | pass |
+| Bed fit reported | pass |
+
+The first version of this harness reported failures against working code: it
+matched `innerText` case-sensitively for a label that CSS uppercases. Assertions
+now read the metric elements from the DOM directly.
+
+## Phase 2 status: complete
+
+Levels A, B and C all work, 3MF is inspected as an archive, and preview and
+thumbnails are in place. Remaining slicer work is incremental — multi-plate
+3MF handling and per-filament assignment for multi-colour prints — and belongs
+with the print-job system in phase 4.

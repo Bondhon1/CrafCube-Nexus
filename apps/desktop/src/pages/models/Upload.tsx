@@ -13,6 +13,7 @@ import {
 } from '@/lib/storage';
 import { Badge, ErrorNote, Field, PageHeader } from '@/components/ui';
 import { AnalysisPanel, EngineNotice } from '@/components/AnalysisPanel';
+import { ModelPreview, renderThumbnail } from '@/components/ModelPreview';
 
 type Stage = 'idle' | 'hashing' | 'checking' | 'analyzing' | 'uploading' | 'saving' | 'done';
 
@@ -55,6 +56,8 @@ export function Upload() {
   // must never block the upload.
   const [analysis, setAnalysis] = useState<GeometryAnalysis | null>(null);
   const [engine, setEngine] = useState<EngineStatus | null>(null);
+  // Kept for the preview and for rendering a thumbnail at submit time.
+  const [meshBuffer, setMeshBuffer] = useState<ArrayBuffer | null>(null);
 
   useEffect(() => {
     void window.nexus?.engine.status().then(setEngine);
@@ -109,7 +112,10 @@ export function Upload() {
     // G-code is parsed rather than measured, and that path is not wired into
     // this screen yet, so only meshes are analysed here.
     const bridge = window.nexus?.engine;
-    if (bridge && extensionOf(picked.name) !== '.gcode') {
+    const extension = extensionOf(picked.name);
+    if (extension === '.stl') setMeshBuffer(await picked.arrayBuffer());
+
+    if (bridge && extension !== '.gcode') {
       setStage('analyzing');
       try {
         const result = await bridge.analyze(picked.name, await picked.arrayBuffer(), {
@@ -204,6 +210,31 @@ export function Upload() {
       if (!duplicate) {
         setStage('uploading');
         await objectStore.upload(key, file, file.type);
+      }
+
+      // Thumbnail is best-effort (§79): a model without one is still valid, so
+      // a WebGL failure must not fail the upload.
+      if (meshBuffer && !duplicate) {
+        const thumbnail = await renderThumbnail(meshBuffer);
+        if (thumbnail) {
+          const thumbKey = `${activeOrg.id}/models/${modelId}/v${version}/thumbnail.png`;
+          try {
+            await objectStore.upload(thumbKey, thumbnail, 'image/png');
+            await supabase.from('model_files').insert({
+              organization_id: activeOrg.id,
+              version_id: (versionRow as { id: string }).id,
+              kind: 'thumbnail',
+              filename: 'thumbnail.png',
+              extension: '.png',
+              storage_key: thumbKey,
+              byte_size: thumbnail.size,
+              content_type: 'image/png',
+              sha256: await sha256(thumbnail),
+            });
+          } catch {
+            // Ignored on purpose: the model upload below still proceeds.
+          }
+        }
       }
 
       setStage('saving');
@@ -301,6 +332,7 @@ export function Upload() {
         </div>
 
         {file && <EngineNotice status={engine} />}
+        {meshBuffer && <ModelPreview buffer={meshBuffer} />}
         {analysis && <AnalysisPanel analysis={analysis} />}
 
         {duplicate && (
