@@ -124,3 +124,43 @@ uploaded before previews existed.
 | Failure writes WASTE on every colour | pass |
 | flexi_fish.3mf renders in the library | pass |
 | Thumbnail backfilled and stored | pass |
+
+## Visualizer and colour selection (2026-09-08)
+
+### The slicer was installed and reported missing
+
+`find_slicers()` only found a bundled build through `NEXUS_SLICER_PATH`, which
+the tests set by hand and the app never did. A portable OrcaSlicer sitting in
+`tools/` is on no PATH and in no Program Files directory, so the engine the app
+spawned reported "no slicer installed" — while my own verification runs, which
+set the variable, passed. Discovery now looks in `tools/orca` relative to the
+project, and `/capabilities` reports slicing available with no environment
+setup.
+
+### Visualizer
+
+Rebuilt on the approach in the `3dp` viewer: `ThreeMFLoader`, `OrbitControls`,
+creased normals at 35°, and a build plate drawn to the printer's real size.
+
+The decisive part is that **3MF loads natively and returns one mesh per
+material**. A multi-colour model therefore arrives already separated into its
+colour groups, which is what makes them selectable at all — an STL conversion
+would have flattened exactly the information needed.
+
+Creased normals matter more than they sound: averaging across a 90° corner makes
+printed parts look dented, which reads as a broken model rather than a shading
+choice.
+
+### Colours are selectable, and the model repaints live
+
+Each colour group becomes a lane with its own spool selector and gram figure.
+Changing a spool repaints that group immediately — the material colour is
+mutated in place rather than reloading the model — so swapping a colour because
+a spool is running low is a visual decision, not a guess.
+
+Slicing replaces the triangle-share split with the slicer's real per-tool
+extrusion, converted to grams using the density the G-code declares. Spool
+choices survive a re-slice.
+
+Per-lane shortfalls are shown against that spool's remaining stock, so the
+reason to change colour is visible next to the control that changes it.

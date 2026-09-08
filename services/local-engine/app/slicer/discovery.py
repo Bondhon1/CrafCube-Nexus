@@ -48,6 +48,20 @@ class SlicerInfo:
         return asdict(self)
 
 
+def _bundled_candidates() -> list[Path]:
+    """Portable slicer builds kept beside the project.
+
+    A downloaded portable build is not on PATH and not in Program Files, so
+    without this the engine reports "no slicer installed" while one sits in the
+    repository — which is exactly what happened.
+    """
+    engine_root = Path(__file__).resolve().parents[2]
+    project_root = engine_root.parents[1]
+    names = ["orca-slicer.exe", "OrcaSlicer.exe", "orca-slicer", "OrcaSlicer"]
+    roots = [project_root / "tools" / "orca", engine_root / "tools" / "orca"]
+    return [root / name for root in roots for name in names]
+
+
 def find_slicers() -> list[SlicerInfo]:
     """Every slicer found, in preference order."""
     found: list[SlicerInfo] = []
@@ -55,6 +69,11 @@ def find_slicers() -> list[SlicerInfo]:
     override = os.environ.get("NEXUS_SLICER_PATH")
     if override and Path(override).exists():
         found.append(SlicerInfo(name="Configured slicer", executable=override))
+
+    for candidate in _bundled_candidates():
+        if candidate.exists():
+            found.append(SlicerInfo(name="OrcaSlicer (bundled)", executable=str(candidate)))
+            break
 
     for name, commands, paths in _CANDIDATES:
         executable = None

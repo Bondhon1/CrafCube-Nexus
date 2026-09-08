@@ -158,6 +158,24 @@ app.whenReady().then(async () => {
       // Converting and rendering a large mesh takes longer than a click.
       await new Promise((r) => setTimeout(r, Number(process.env.NEXUS_CLICK_WAIT) || 1500));
     }
+
+    // NEXUS_SELECT picks the first non-empty option of the nth <select>, so a
+    // form that only comes alive after a choice can be captured.
+    if (process.env.NEXUS_SELECT) {
+      await win.webContents.executeJavaScript(`(() => {
+        const index = ${Number(process.env.NEXUS_SELECT) || 0};
+        const select = document.querySelectorAll('select')[index];
+        if (!select) return 'no select';
+        const option = [...select.options].find((o) => o.value);
+        if (!option) return 'no option';
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLSelectElement.prototype, 'value').set;
+        setter.call(select, option.value);
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        return option.textContent;
+      })()`).then((r) => console.log('  selected:', r));
+      await new Promise((r) => setTimeout(r, Number(process.env.NEXUS_SELECT_WAIT) || 8000));
+    }
     const image = await win.webContents.capturePage();
     const name = (route.replace(/^\//, '').replace(/\//g, '-') || 'dashboard') + '.png';
     fs.writeFileSync(path.join(outDir, name), image.toPNG());

@@ -6,7 +6,8 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/app/SessionProvider';
 import { formatBytes, objectStore, sha256 } from '@/lib/storage';
 import { ModelsIcon } from '@/components/icons';
-import { ModelPreview, renderThumbnail } from '@/components/ModelPreview';
+import { renderThumbnail } from '@/components/ModelPreview';
+import { Visualizer } from '@/components/Visualizer';
 import {
   Badge, EmptyRow, ErrorNote, Modal, PageHeader, Panel, Row, Table, Td, Th,
 } from '@/components/ui';
@@ -202,7 +203,7 @@ function VersionsModal({ model, onClose }: { model: ModelRow; onClose: () => voi
   const { activeOrg } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
-  const [mesh, setMesh] = useState<ArrayBuffer | null>(null);
+  const [mesh, setMesh] = useState<{ buffer: ArrayBuffer; filename: string } | null>(null);
   const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'unavailable'>('idle');
   const versions = [...model.versions].sort((a, b) => b.version - a.version);
   const latest = versions[0];
@@ -224,12 +225,16 @@ function VersionsModal({ model, onClose }: { model: ModelRow; onClose: () => voi
       try {
         const blob = await objectStore.download(source.storage_key);
         const buffer = await blob.arrayBuffer();
+        if (cancelled) return;
+        // The visualizer reads 3MF natively, so the original file is shown
+        // with its own colour groups rather than a flattened conversion.
+        setMesh({ buffer, filename: source.filename });
+        setPreviewState('idle');
+
+        // Thumbnails still render from STL, which the engine converts.
         const stl = source.filename.toLowerCase().endsWith('.stl')
           ? buffer
           : await bridge.meshPreview(source.filename, buffer);
-        if (cancelled) return;
-        setMesh(stl);
-        setPreviewState('idle');
 
         // Backfill a thumbnail for models uploaded before previews existed.
         const hasThumbnail = latest.files.some((f) => f.kind === 'thumbnail');
@@ -292,8 +297,7 @@ function VersionsModal({ model, onClose }: { model: ModelRow; onClose: () => voi
 
       {mesh ? (
         <div className="mb-4">
-          <ModelPreview buffer={mesh} height={240} />
-          <p className="mt-1.5 text-center text-[11px] text-slate-600">Drag to rotate</p>
+          <Visualizer buffer={mesh.buffer} filename={mesh.filename} height={280} />
         </div>
       ) : (
         <div className="mb-4 grid h-[240px] place-items-center rounded-lg border border-line

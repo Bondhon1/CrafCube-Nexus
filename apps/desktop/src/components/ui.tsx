@@ -133,7 +133,7 @@ export function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={`card max-h-[85vh] overflow-y-auto ${width}`}>
+      <div className={`card max-h-[85vh] overflow-y-auto overflow-x-hidden ${width}`}>
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-100">{title}</h2>
           <button
