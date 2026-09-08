@@ -14,6 +14,16 @@ contextBridge.exposeInMainWorld('nexus', {
   },
   ping: () => ipcRenderer.invoke('nexus:ping'),
 
+  /** Local analysis engine; may be unavailable, so callers must handle that. */
+  engine: {
+    status: () => ipcRenderer.invoke('engine:status'),
+    start: () => ipcRenderer.invoke('engine:start'),
+    analyze: (filename: string, bytes: ArrayBuffer, fields: Record<string, string | number>) =>
+      ipcRenderer.invoke('engine:analyze', filename, bytes, fields),
+    parseGcode: (filename: string, bytes: ArrayBuffer, fields: Record<string, string | number>) =>
+      ipcRenderer.invoke('engine:parse-gcode', filename, bytes, fields),
+  },
+
   /** Object transfers, run in the main process so no CORS check applies. */
   storage: {
     put: (url: string, headers: Record<string, string>, body: ArrayBuffer) =>

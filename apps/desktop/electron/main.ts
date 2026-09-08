@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
+import { engineStatus, engineUpload, startEngine, stopEngine } from './engine';
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
@@ -86,6 +87,21 @@ ipcMain.handle('window:is-maximized', (event) => callerWindow(event)?.isMaximize
 
 ipcMain.handle('nexus:ping', () => ({ ok: true, at: new Date().toISOString() }));
 
+// Local engine (design doc §37-§40). Analysis runs out of process, so a crash
+// in trimesh or a slicer cannot take the UI down with it.
+ipcMain.handle('engine:status', () => engineStatus());
+ipcMain.handle('engine:start', () => startEngine());
+ipcMain.handle(
+  'engine:analyze',
+  (_event, filename: string, bytes: ArrayBuffer, fields: Record<string, string | number>) =>
+    engineUpload('/analyze', filename, bytes, fields),
+);
+ipcMain.handle(
+  'engine:parse-gcode',
+  (_event, filename: string, bytes: ArrayBuffer, fields: Record<string, string | number>) =>
+    engineUpload('/parse-gcode', filename, bytes, fields),
+);
+
 /**
  * Object transfers run here rather than in the renderer.
  *
@@ -129,9 +145,17 @@ ipcMain.handle('storage:delete', async (_event, url: string) => {
   return true;
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  // Started in the background: the app must not wait on it, and it is allowed
+  // to be unavailable.
+  void startEngine();
+});
+
+app.on('before-quit', stopEngine);
 
 app.on('window-all-closed', () => {
+  stopEngine();
   if (process.platform !== 'darwin') app.quit();
 });
 

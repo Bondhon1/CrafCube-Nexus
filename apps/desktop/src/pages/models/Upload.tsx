@@ -12,8 +12,9 @@ import {
   modelObjectKey, objectStore, sha256,
 } from '@/lib/storage';
 import { Badge, ErrorNote, Field, PageHeader } from '@/components/ui';
+import { AnalysisPanel, EngineNotice } from '@/components/AnalysisPanel';
 
-type Stage = 'idle' | 'hashing' | 'checking' | 'uploading' | 'saving' | 'done';
+type Stage = 'idle' | 'hashing' | 'checking' | 'analyzing' | 'uploading' | 'saving' | 'done';
 
 /** Strips the extension and tidies separators into a readable default name. */
 function nameFromFilename(filename: string): string {
@@ -49,6 +50,15 @@ export function Upload() {
   const [stage, setStage] = useState<Stage>('idle');
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Geometry analysis is best-effort: the engine is optional, so a failure here
+  // must never block the upload.
+  const [analysis, setAnalysis] = useState<GeometryAnalysis | null>(null);
+  const [engine, setEngine] = useState<EngineStatus | null>(null);
+
+  useEffect(() => {
+    void window.nexus?.engine.status().then(setEngine);
+  }, []);
 
   useEffect(() => {
     if (!activeOrg) return;
@@ -95,6 +105,32 @@ export function Upload() {
       const rows = (data ?? []) as DuplicateFile[];
       if (rows.length > 0) setDuplicate(rows[0]);
     }
+
+    // G-code is parsed rather than measured, and that path is not wired into
+    // this screen yet, so only meshes are analysed here.
+    const bridge = window.nexus?.engine;
+    if (bridge && extensionOf(picked.name) !== '.gcode') {
+      setStage('analyzing');
+      try {
+        const result = await bridge.analyze(picked.name, await picked.arrayBuffer(), {
+          bed_x_mm: 260,
+          bed_y_mm: 260,
+          bed_z_mm: 260,
+          density_g_cm3: 1.24,
+          infill_percent: 15,
+        });
+        setAnalysis(result);
+      } catch (err) {
+        // Surfaced as a notice, not an error: the upload is still valid.
+        setEngine({
+          state: 'unavailable',
+          baseUrl: '',
+          error: err instanceof Error ? err.message : String(err),
+          capabilities: null,
+        });
+      }
+    }
+
     setStage('idle');
   }, [activeOrg, name]);
 
@@ -141,6 +177,14 @@ export function Upload() {
           generation_method: method,
           generation_tool: tool.trim() || null,
           prompt: prompt.trim() || null,
+          // Null when the engine was unavailable; the analyzer can fill these
+          // in later without changing anything else.
+          width_mm: analysis?.geometry.dimensions.width_mm ?? null,
+          depth_mm: analysis?.geometry.dimensions.depth_mm ?? null,
+          height_mm: analysis?.geometry.dimensions.height_mm ?? null,
+          volume_cm3: analysis?.geometry.volume_cm3 ?? null,
+          triangle_count: analysis?.geometry.triangle_count ?? null,
+          is_manifold: analysis?.geometry.is_watertight ?? null,
         })
         .select()
         .single();
@@ -247,12 +291,17 @@ export function Upload() {
               </p>
             </div>
           )}
-          {(stage === 'hashing' || stage === 'checking') && (
+          {(stage === 'hashing' || stage === 'checking' || stage === 'analyzing') && (
             <p className="mt-3 text-xs text-mint">
-              {stage === 'hashing' ? 'Hashing…' : 'Checking for duplicates…'}
+              {stage === 'hashing' && 'Hashing…'}
+              {stage === 'checking' && 'Checking for duplicates…'}
+              {stage === 'analyzing' && 'Analysing geometry…'}
             </p>
           )}
         </div>
+
+        {file && <EngineNotice status={engine} />}
+        {analysis && <AnalysisPanel analysis={analysis} />}
 
         {duplicate && (
           <div className="rounded-lg border border-mint/30 bg-mint/10 p-4 text-sm">

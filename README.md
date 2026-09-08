@@ -8,7 +8,7 @@ Full blueprint: [3D_Artifact_Business_Management_System_Design.md](3D_Artifact_B
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Auth, orgs, roles, audit, inventory, printers, model library | **done** (thumbnails pending) |
-| 2 | Geometry analysis, thumbnails, 3D preview, slicer + G-code | next |
+| 2 | Geometry analysis, thumbnails, 3D preview, slicer + G-code | **in progress** |
 | 3 | Costing and pricing engine | planned |
 | 4 | Print jobs, queue, inventory consumption | planned |
 | 5 | Sales, orders, finance | planned |
@@ -18,6 +18,7 @@ Full blueprint: [3D_Artifact_Business_Management_System_Design.md](3D_Artifact_B
 
 ```
 apps/desktop      Electron + React + TypeScript + Vite + Tailwind
+services/         Python local engine (mesh + G-code analysis)
 packages/types    Shared domain types, roles and capability matrix
 supabase/         PostgreSQL migrations (schema, functions, RLS)
 scripts/          Headless screenshot harness
