@@ -10,6 +10,11 @@ import { Placeholder } from '@/pages/Placeholder';
 import { OrganizationSettings } from '@/pages/settings/OrganizationSettings';
 import { Users } from '@/pages/settings/Users';
 import { AuditLog } from '@/pages/settings/AuditLog';
+import { Filaments } from '@/pages/inventory/Filaments';
+import { Spools } from '@/pages/inventory/Spools';
+import { Transactions } from '@/pages/inventory/Transactions';
+import { Machines } from '@/pages/printers/Machines';
+import { Profiles } from '@/pages/printers/Profiles';
 import { NAVIGATION } from '@/app/navigation';
 import { WindowControls } from '@/components/WindowControls';
 
@@ -34,7 +39,16 @@ function SetupRequired() {
 }
 
 /** Routes declared in navigation but not yet implemented resolve to Placeholder. */
-const IMPLEMENTED = new Set(['/settings/organization', '/settings/users', '/settings/audit']);
+const IMPLEMENTED = new Set([
+  '/settings/organization',
+  '/settings/users',
+  '/settings/audit',
+  '/inventory/filaments',
+  '/inventory/spools',
+  '/inventory/transactions',
+  '/printers/machines',
+  '/printers/profiles',
+]);
 
 function Shell() {
   return (
@@ -48,6 +62,11 @@ function Shell() {
             <Route path="/settings/organization" element={<OrganizationSettings />} />
             <Route path="/settings/users" element={<Users />} />
             <Route path="/settings/audit" element={<AuditLog />} />
+            <Route path="/inventory/filaments" element={<Filaments />} />
+            <Route path="/inventory/spools" element={<Spools />} />
+            <Route path="/inventory/transactions" element={<Transactions />} />
+            <Route path="/printers/machines" element={<Machines />} />
+            <Route path="/printers/profiles" element={<Profiles />} />
             {NAVIGATION.flatMap((s) => s.children ?? [])
               .filter((c) => !IMPLEMENTED.has(c.path))
               .map((c) => (

@@ -36,8 +36,8 @@ export const NAVIGATION: NavSection[] = [
     icon: '⬢',
     capability: 'models.read',
     children: [
-      { label: 'Library', path: '/models/library', phase: 1 },
-      { label: 'Upload', path: '/models/upload', phase: 1 },
+      { label: 'Library', path: '/models/library', phase: 2 },
+      { label: 'Upload', path: '/models/upload', phase: 2 },
       { label: 'Analysis', path: '/models/analysis', phase: 2 },
       { label: 'Versions', path: '/models/versions', phase: 2 },
     ],
@@ -64,7 +64,7 @@ export const NAVIGATION: NavSection[] = [
       { label: 'Machines', path: '/printers/machines', phase: 1 },
       { label: 'Status', path: '/printers/status', phase: 4 },
       { label: 'Maintenance', path: '/printers/maintenance', phase: 4 },
-      { label: 'Profiles', path: '/printers/profiles', phase: 2 },
+      { label: 'Profiles', path: '/printers/profiles' },
     ],
   },
   {
@@ -118,7 +118,7 @@ export const NAVIGATION: NavSection[] = [
       { label: 'Cost Profiles', path: '/settings/cost-profiles', phase: 3 },
       { label: 'Slicer', path: '/settings/slicer', phase: 2 },
       { label: 'Notifications', path: '/settings/notifications', phase: 6 },
-      { label: 'Storage', path: '/settings/storage', phase: 1 },
+      { label: 'Storage', path: '/settings/storage', phase: 2 },
     ],
   },
 ];

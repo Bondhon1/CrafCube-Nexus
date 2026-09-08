@@ -190,3 +190,78 @@ Note for future automation: this environment sets `ELECTRON_RUN_AS_NODE=1`,
 which makes `electron.exe` run as plain Node — `require('electron')` then
 returns the binary path string and the app dies with a confusing
 `Cannot read properties of undefined` error. Unset it before launching.
+
+## Phase 1 completed: inventory and printers (2026-09-08)
+
+The first pass stopped after Sprint 1 (auth, organizations, roles) while the
+navigation already advertised Inventory, Models and Printers as phase 1 — the
+app contradicted itself, showing "scheduled for phase 1" on a screen the user
+was already looking at. Design doc §86 puts inventory, models and printers in
+phase 1, so the remainder was built.
+
+### Inventory (§6-§12, §50-§51)
+
+- `materials`, `filament_brands`, `filament_products`, `filament_spools`,
+  `filament_transactions`
+- Every physical spool is its own inventory item with its own landed cost.
+  `landed_cost` and `cost_per_gram` are generated columns, so the arithmetic
+  cannot drift from the inputs.
+- **The ledger is the source of truth.** `remaining_grams` and `reserved_grams`
+  are caches, recomputed from the transactions by trigger rather than
+  incremented — a corrected or deleted row can never leave a spool out of step.
+- A `filament_txn_sign` check enforces direction per type: consumption and waste
+  must be negative, purchases and returns positive, adjustments either.
+- Reservations move `reserved_grams` and deliberately leave `remaining_grams`
+  untouched.
+- Each transaction stores an immutable cost snapshot (§105), so editing a
+  spool's price never rewrites the value of past movements.
+- Registering a spool writes its opening `PURCHASE` row, so the ledger explains
+  the full quantity instead of starting mid-story.
+- The ledger is append-only to clients: `UPDATE` and `DELETE` are revoked.
+- `filament_stock` rolls product stock up across active spools with weighted
+  average cost (§9) and low-stock levels (§11). It is `security_invoker`, so the
+  underlying RLS still applies.
+
+### Printers (§36)
+
+- `printers` and `printer_profiles`, with build volume, colour slots, supported
+  materials and the machine-cost fields the phase 3 pricing engine will need.
+- Nothing is hard-coded to the Kobra X. `seed_default_catalog()` seeds nine
+  common materials plus the Kobra X (260³ mm, 4 colour slots, 300°C / 100°C) and
+  three quality profiles, but any brand can be added.
+
+### Verified against the live database
+
+Run inside a transaction and rolled back:
+
+| Check | Result |
+|---|---|
+| Nine materials and the Kobra X seeded with three profiles | pass |
+| Landed cost 1200+100+50 over 1000 g gives 1.35/g (doc §8) | pass |
+| Ledger 1000 −83 −17 +5 −4 settles at 901 g (doc §50) | pass |
+| Reservation moves reserved, not remaining | pass |
+| Release returns reserved to zero | pass |
+| Cost snapshot survives a later spool price change | pass |
+| Positive CONSUMPTION rejected by the sign constraint | pass |
+| Client DELETE on the ledger denied | pass |
+
+All seven tables and the rollup view return 200 through PostgREST.
+
+### Migration runner
+
+`apply_migrations.py` now records applied files in `public.schema_migrations`,
+committing each migration and its ledger row in one transaction so a failure can
+never mark a file as applied.
+
+### Screenshot harness
+
+`scripts/capture.cjs` loads the built renderer offscreen, injects a real session
+into `localStorage` and captures each hash route. It replaced OS-level input
+automation, which types into whatever window happens to be focused and is unsafe
+on a desktop in use.
+
+### Still outstanding for phase 1
+
+Models — library, upload, thumbnails, metadata — needs Cloudflare R2 credentials
+and is the first task of the next session. The navigation now labels those
+screens phase 2 rather than claiming phase 1 while showing a placeholder.
