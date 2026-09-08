@@ -160,7 +160,9 @@ export function Library() {
                   <div className="whitespace-nowrap font-medium text-slate-200">{m.name}</div>
                   {latest?.width_mm ? (
                     <div className="whitespace-nowrap text-xs text-slate-500">
-                      {latest.width_mm} × {latest.depth_mm} × {latest.height_mm} mm
+                      {/* Three decimals is false precision for a printed part. */}
+                      {Number(latest.width_mm).toFixed(1)} × {Number(latest.depth_mm).toFixed(1)}
+                      {' × '}{Number(latest.height_mm).toFixed(1)} mm
                     </div>
                   ) : (
                     <div className="text-xs text-slate-600">Not analysed yet</div>
