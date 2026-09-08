@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { engineStatus, engineUpload, startEngine, stopEngine } from './engine';
+import { engineStatus, engineUpload, engineUploadBinary, startEngine, stopEngine } from './engine';
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
@@ -96,6 +96,14 @@ ipcMain.handle(
   (_event, filename: string, bytes: ArrayBuffer, fields: Record<string, string | number>) =>
     engineUpload('/analyze', filename, bytes, fields),
 );
+// Returns STL bytes for any supported mesh format, so the renderer needs only
+// one parser.
+ipcMain.handle(
+  'engine:mesh-preview',
+  (_event, filename: string, bytes: ArrayBuffer) =>
+    engineUploadBinary('/mesh-preview', filename, bytes),
+);
+
 ipcMain.handle(
   'engine:parse-gcode',
   (_event, filename: string, bytes: ArrayBuffer, fields: Record<string, string | number>) =>

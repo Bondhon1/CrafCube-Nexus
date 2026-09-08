@@ -113,11 +113,22 @@ export function Upload() {
     // this screen yet, so only meshes are analysed here.
     const bridge = window.nexus?.engine;
     const extension = extensionOf(picked.name);
-    if (extension === '.stl') setMeshBuffer(await picked.arrayBuffer());
 
     if (bridge && extension !== '.gcode') {
       setStage('analyzing');
       try {
+        // STL is drawn directly; anything else is converted by the engine,
+        // which already knows how to read every supported format.
+        if (extension === '.stl') {
+          setMeshBuffer(await picked.arrayBuffer());
+        } else {
+          try {
+            setMeshBuffer(await bridge.meshPreview(picked.name, await picked.arrayBuffer()));
+          } catch {
+            // Preview is optional; analysis below still runs.
+          }
+        }
+
         const result = await bridge.analyze(picked.name, await picked.arrayBuffer(), {
           bed_x_mm: 260,
           bed_y_mm: 260,

@@ -143,6 +143,50 @@ export async function engineStatus(): Promise<{
   return { state, baseUrl: engineBaseUrl, error: lastError, capabilities };
 }
 
+/**
+ * Ensures the engine is running, starting it if this is the first call.
+ * Every request path needs this, so it lives in one place.
+ */
+async function ensureReady(): Promise<void> {
+  if (state === 'ready') return;
+  const started = await startEngine();
+  if (started !== 'ready') {
+    throw new Error(lastError ?? 'local engine is not running');
+  }
+}
+
+function buildForm(
+  filename: string,
+  bytes: ArrayBuffer,
+  fields: Record<string, string | number>,
+): FormData {
+  const form = new FormData();
+  form.append('file', new Blob([bytes]), filename);
+  for (const [key, value] of Object.entries(fields)) {
+    form.append(key, String(value));
+  }
+  return form;
+}
+
+/** Posts a file and returns the raw response body, for binary endpoints. */
+export async function engineUploadBinary(
+  route: string,
+  filename: string,
+  bytes: ArrayBuffer,
+  fields: Record<string, string | number> = {},
+): Promise<ArrayBuffer> {
+  await ensureReady();
+  const response = await fetch(`${engineBaseUrl}${route}`, {
+    method: 'POST',
+    body: buildForm(filename, bytes, fields),
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 200);
+    throw new Error(`engine ${route} failed (${response.status}): ${detail}`);
+  }
+  return await response.arrayBuffer();
+}
+
 /** Posts a file to an engine endpoint as multipart/form-data. */
 export async function engineUpload(
   route: string,
@@ -150,20 +194,12 @@ export async function engineUpload(
   bytes: ArrayBuffer,
   fields: Record<string, string | number> = {},
 ): Promise<unknown> {
-  if (state !== 'ready') {
-    const started = await startEngine();
-    if (started !== 'ready') {
-      throw new Error(lastError ?? 'local engine is not running');
-    }
-  }
+  await ensureReady();
 
-  const form = new FormData();
-  form.append('file', new Blob([bytes]), filename);
-  for (const [key, value] of Object.entries(fields)) {
-    form.append(key, String(value));
-  }
-
-  const response = await fetch(`${engineBaseUrl}${route}`, { method: 'POST', body: form });
+  const response = await fetch(`${engineBaseUrl}${route}`, {
+    method: 'POST',
+    body: buildForm(filename, bytes, fields),
+  });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const detail =

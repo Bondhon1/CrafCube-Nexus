@@ -19,6 +19,7 @@ from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.geometry.analyzer import (
@@ -209,6 +210,37 @@ async def parse_gcode_endpoint(
         "gcode": result.to_dict(),
         "confidence": {"level": level, "reason": reason},
     }
+
+
+@app.post("/mesh-preview")
+async def mesh_preview(
+    file: UploadFile = File(...),
+    max_faces: int = Form(120_000),
+) -> Response:
+    """Return the mesh as binary STL, whatever format came in.
+
+    The renderer can draw STL and nothing else. Writing a 3MF/OBJ/PLY parser in
+    the renderer would duplicate trimesh badly, so conversion happens here and
+    one code path covers every supported format.
+
+    Dense meshes are decimated first: a preview does not need 500k triangles,
+    and shipping them over IPC to draw a 280px canvas is wasted work.
+    """
+    path = _save_upload(file, SUPPORTED_MESH_SUFFIXES)
+    try:
+        mesh = load_mesh(str(path))
+    except MeshLoadError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        path.unlink(missing_ok=True)
+
+    if max_faces > 0 and mesh.faces.shape[0] > max_faces:
+        try:
+            mesh = mesh.simplify_quadric_decimation(max_faces)
+        except Exception:  # noqa: BLE001 - preview quality, never fatal
+            pass
+
+    return Response(content=mesh.export(file_type="stl"), media_type="model/stl")
 
 
 @app.post("/slice")

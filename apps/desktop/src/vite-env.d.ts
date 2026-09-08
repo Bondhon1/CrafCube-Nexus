@@ -79,6 +79,8 @@ interface NexusEngine {
     bytes: ArrayBuffer,
     fields: Record<string, string | number>,
   ): Promise<unknown>;
+  /** STL bytes for any supported mesh format. */
+  meshPreview(filename: string, bytes: ArrayBuffer): Promise<ArrayBuffer>;
 }
 
 interface NexusBridge {
