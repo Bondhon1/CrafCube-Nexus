@@ -89,3 +89,61 @@ would land straight in pricing.
 - **3MF inspection (§16).** Currently flattened as a mesh; slicer settings and
   plate metadata inside the archive are not read yet.
 - **Thumbnails and 3D preview (§79, §80).** Carried over from phase 1.
+
+## Level B — real slicing (2026-09-08)
+
+OrcaSlicer 2.4.2 (portable build in `tools/`, gitignored) now slices for real,
+using **the vendor's own Anycubic Kobra X profiles**. That matters for accuracy:
+the stock profiles carry the true machine limits, flow rates and retraction
+behaviour, which a hand-built profile would get wrong in ways that quietly move
+the filament figure.
+
+Three things had to be solved to slice non-interactively:
+
+1. **The CLI is not PrusaSlicer's.** Orca rejects `--export-gcode`; it wants
+   `--slice 0` with profiles loaded from files.
+2. **Profile inheritance must be flattened first.** Vendor profiles use an
+   `inherits` chain, and loading a child file alone leaves the parent's values
+   unset, so the child's own constraints fail validation.
+3. **A validation quirk blocks the stock profiles.** Orca range-checks
+   `retraction_distances_when_cut` against [10, 18] even when
+   `enable_long_retraction_when_cut` is 0 — and the Anycubic profiles ship 0, so
+   an unmodified vendor profile refuses to slice. The feature stays off; only
+   the inert value is made legal.
+
+### A bug worth recording
+
+Profile matching originally used plain substring tests, and selected
+**"Anycubic Kobra 2 Max"** for printer "Kobra X" — the single letter `x` occurs
+inside "Max". It sliced happily and returned a confident number for the wrong
+machine, which is the worst failure mode a costing system has. Terms are now
+matched on word boundaries, with regression tests.
+
+### Result on a 40×50×60 mm box, Kobra X, 0.20 mm, 15% infill
+
+| Source | Filament | Time |
+|---|---|---|
+| Level A — geometry | 41.0 g | — |
+| Level B — sliced | **33.98 g** | 3261 s, 594 layers |
+| Level C — recomputed from the G-code | 35.39 g | — |
+
+Confidence: **HIGH**, slicer and G-code agreeing within 4.2%.
+
+**Geometry was 21% over.** That single number is the argument for §4's insistence
+that a geometry estimate must never be presented as costing-grade — a 21% error
+on material is the difference between a healthy margin and none.
+
+Level C now reads `filament_density` from the G-code rather than assuming 1.24,
+so the two figures are compared on the slicer's own basis instead of disagreeing
+for a reason that is not a real error.
+
+## 3MF inspection (§16)
+
+3MF is treated as an archive, not a mesh: object count, unit, metadata and
+slicer settings are read from inside. A **sliced** project carries the slicer's
+own filament and time figures, which §41 ranks above anything the engine can
+recompute — so a sliced 3MF gives costing-grade numbers with no slicer run at
+all. A non-millimetre unit raises a warning, since a metre-unit model would
+misprice by a factor of a thousand.
+
+Tests: 45.

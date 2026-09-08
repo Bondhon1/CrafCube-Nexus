@@ -30,7 +30,10 @@ from app.geometry.analyzer import (
     load_mesh,
 )
 from app.gcode.parser import confidence_from_agreement, parse_gcode
-from app.slicer.discovery import find_slicers
+from app.slicer.discovery import find_slicers, preferred_slicer
+from app.slicer.profiles import available_printers
+from app.slicer.runner import slice_model
+from app.three_mf.reader import inspect_3mf
 
 VERSION = "0.1.0"
 
@@ -67,12 +70,16 @@ def capabilities() -> dict[str, Any]:
     caller must treat filament figures as geometry estimates (§4).
     """
     slicers = find_slicers()
+    chosen = slicers[0] if slicers else None
+    printers = available_printers(chosen.executable) if chosen else []
     return {
         "version": VERSION,
         "geometry": True,
         "gcode_parsing": True,
+        "three_mf": True,
         "slicing": bool(slicers),
         "slicers": [s.to_dict() for s in slicers],
+        "printer_profiles": printers,
         "supported_mesh_formats": sorted(SUPPORTED_MESH_SUFFIXES),
         "analysis_levels": {
             "A_geometry": "available",
@@ -201,6 +208,78 @@ async def parse_gcode_endpoint(
         "level": "C",
         "gcode": result.to_dict(),
         "confidence": {"level": level, "reason": reason},
+    }
+
+
+@app.post("/slice")
+async def slice_endpoint(
+    file: UploadFile = File(...),
+    layer_height_mm: float = Form(0.2),
+    infill_percent: int = Form(15),
+    wall_count: int = Form(3),
+    supports: bool = Form(False),
+    nozzle_mm: float = Form(0.4),
+    density_g_cm3: float = Form(1.24),
+    printer: str = Form("Kobra X"),
+    vendor: str = Form("Anycubic"),
+    material: str = Form("PLA"),
+) -> dict[str, Any]:
+    """Level B: a real slice, the primary costing source (§4).
+
+    Returns the slicer's own figures alongside an independent recomputation
+    from the produced G-code, plus the confidence their agreement implies.
+    """
+    path = _save_upload(file, SUPPORTED_MESH_SUFFIXES)
+    try:
+        result = slice_model(
+            path,
+            layer_height_mm=layer_height_mm,
+            infill_percent=infill_percent,
+            wall_count=wall_count,
+            supports=supports,
+            nozzle_mm=nozzle_mm,
+            density_g_cm3=density_g_cm3,
+            printer=printer,
+            vendor=vendor,
+            material=material,
+        )
+    finally:
+        path.unlink(missing_ok=True)
+
+    if not result.ok:
+        # Deliberately not an HTTP error: a failed slice is a normal outcome
+        # that the caller handles by falling back to a geometry estimate.
+        return {"status": "failed", "level": "B", "slice": result.to_dict()}
+
+    gcode = result.gcode or {}
+    level, reason = confidence_from_agreement(
+        gcode.get("calculated_filament_grams"), gcode.get("slicer_filament_grams")
+    )
+    return {
+        "status": "success",
+        "level": "B",
+        "slice": result.to_dict(),
+        "confidence": {"level": level, "reason": reason},
+    }
+
+
+@app.post("/analyze-3mf")
+async def analyze_3mf(file: UploadFile = File(...)) -> dict[str, Any]:
+    """Inspect a 3MF before treating it as a plain mesh (§16).
+
+    A sliced project already carries the slicer's own filament and time
+    figures, which §41 ranks above anything this service can recompute.
+    """
+    path = _save_upload(file, {".3mf"})
+    try:
+        info = inspect_3mf(path)
+    finally:
+        path.unlink(missing_ok=True)
+
+    return {
+        "status": "success",
+        "three_mf": info.to_dict(),
+        "has_slicer_data": info.contains_gcode,
     }
 
 

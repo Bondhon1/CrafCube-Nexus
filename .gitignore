@@ -13,3 +13,6 @@ __pycache__/
 # Local-only database credentials
 supabase/.env.local
 .pytest_cache/
+
+# Downloaded slicer binaries
+tools/
