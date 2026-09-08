@@ -39,8 +39,34 @@
     -webkit-app-region: no-drag;
   }
 
+  /* Slightly dimensional rather than flat: a translucent surface, a hairline
+     top highlight, and a shadow that reads as depth instead of a drop shadow. */
   .card {
-    @apply rounded-xl border border-line bg-ink-850/80 p-5 shadow-panel;
+    @apply rounded-xl border p-5;
+    background: rgba(6, 26, 33, 0.72);
+    border-color: rgba(80, 220, 200, 0.12);
+    box-shadow:
+      0 10px 40px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.025);
+    transition: border-color 180ms ease-out, transform 180ms ease-out;
+  }
+
+  /* Only interactive cards lift; a static panel that moves is noise. */
+  .card-interactive:hover {
+    border-color: rgba(60, 220, 190, 0.28);
+    transform: translateY(-1px);
+  }
+
+  /* Thin accent rule at the top of a stat tile. */
+  .accent-rule::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 1.25rem;
+    width: 1.75rem;
+    height: 2px;
+    border-radius: 0 0 2px 2px;
+    background: linear-gradient(90deg, #0df8d0, rgba(13, 248, 208, 0));
   }
 
   /* Auth panels sit on photography, so they need real blur, not just alpha. */
@@ -87,5 +113,10 @@
 
   .rule {
     @apply h-px w-10 bg-mint;
+  }
+
+  /* Figures line up column to column; proportional digits jitter as they change. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }

@@ -16,9 +16,12 @@ import { Transactions } from '@/pages/inventory/Transactions';
 import { Machines } from '@/pages/printers/Machines';
 import { Library } from '@/pages/models/Library';
 import { Upload } from '@/pages/models/Upload';
+import { CostProfiles } from '@/pages/settings/CostProfiles';
+import { Pricing } from '@/pages/settings/Pricing';
 import { Profiles } from '@/pages/printers/Profiles';
 import { NAVIGATION } from '@/app/navigation';
 import { WindowControls } from '@/components/WindowControls';
+import { Atmosphere } from '@/components/Atmosphere';
 
 function SetupRequired() {
   return (
@@ -52,15 +55,18 @@ const IMPLEMENTED = new Set([
   '/printers/profiles',
   '/models/library',
   '/models/upload',
+  '/settings/cost-profiles',
+  '/settings/pricing',
 ]);
 
 function Shell() {
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col bg-ink-900">
       <TitleBar />
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
+        <Atmosphere />
         <Sidebar />
-        <main className="min-w-0 flex-1 overflow-y-auto p-6">
+        <main className="relative z-10 min-w-0 flex-1 overflow-y-auto p-6">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/settings/organization" element={<OrganizationSettings />} />
@@ -69,6 +75,8 @@ function Shell() {
             <Route path="/inventory/filaments" element={<Filaments />} />
             <Route path="/inventory/spools" element={<Spools />} />
             <Route path="/inventory/transactions" element={<Transactions />} />
+            <Route path="/settings/cost-profiles" element={<CostProfiles />} />
+            <Route path="/settings/pricing" element={<Pricing />} />
             <Route path="/models/library" element={<Library />} />
             <Route path="/models/upload" element={<Upload />} />
             <Route path="/printers/machines" element={<Machines />} />

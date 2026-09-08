@@ -9,8 +9,8 @@ Full blueprint: [3D_Artifact_Business_Management_System_Design.md](3D_Artifact_B
 |---|---|---|
 | 1 | Auth, orgs, roles, audit, inventory, printers, model library | **done** |
 | 2 | Geometry, slicing, G-code, 3MF, 3D preview, thumbnails | **done** |
-| 3 | Costing and pricing engine | next |
-| 4 | Print jobs, queue, inventory consumption | planned |
+| 3 | Costing and pricing engine | **done** |
+| 4 | Print jobs, queue, inventory consumption | next |
 | 5 | Sales, orders, finance | planned |
 | 6 | Analytics, calibration, forecasting | planned |
 
