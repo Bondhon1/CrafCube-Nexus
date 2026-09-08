@@ -30,13 +30,26 @@ const ENGINE_DIR = path.join(__dirname, '..', 'services', 'local-engine');
 const ENGINE = 'http://127.0.0.1:8765';
 let engineChild = null;
 
-const enginePing = async () => {
-  try { return (await fetch(ENGINE + '/status')).ok; } catch { return false; }
+const EXPECTED_ENGINE = '0.2.0';
+
+const engineIdentity = async () => {
+  try {
+    const res = await fetch(ENGINE + '/status');
+    return res.ok ? await res.json() : null;
+  } catch { return null; }
 };
+const enginePing = async () => (await engineIdentity()) !== null;
 
 /** Screens that call the engine render as they really do only if it is up. */
 async function startEngine() {
-  if (await enginePing()) return true;
+  const existing = await engineIdentity();
+  if (existing) {
+    if (existing.version === EXPECTED_ENGINE) return true;
+    // Adopting an old engine makes a fixed bug look unfixed in screenshots.
+    console.log(`  replacing engine ${existing.version} (pid ${existing.pid})`);
+    try { process.kill(existing.pid); } catch { /* already gone */ }
+    await new Promise((r) => setTimeout(r, 700));
+  }
   const python = path.join(ENGINE_DIR, '.venv', 'Scripts', 'python.exe');
   if (!fs.existsSync(python)) return false;
   engineChild = spawn(python, ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1',
@@ -192,6 +205,20 @@ app.whenReady().then(async () => {
       })()`).then((r) => console.log('  selected:', r));
       await new Promise((r) => setTimeout(r, Number(process.env.NEXUS_SELECT_WAIT) || 8000));
     }
+
+    // NEXUS_CLICK2 fires after the selection has settled, for buttons that only
+    // exist once a form is populated.
+    if (process.env.NEXUS_CLICK2) {
+      await win.webContents.executeJavaScript(`(() => {
+        const label = ${JSON.stringify(process.env.NEXUS_CLICK2)};
+        const el = [...document.querySelectorAll('button')]
+          .find((b) => b.textContent.trim() === label && !b.disabled);
+        if (el) el.click();
+        return Boolean(el);
+      })()`).then((r) => console.log('  click2:', r));
+      await new Promise((r) => setTimeout(r, Number(process.env.NEXUS_CLICK2_WAIT) || 30000));
+    }
+
     const image = await win.webContents.capturePage();
     const name = (route.replace(/^\//, '').replace(/\//g, '-') || 'dashboard') + '.png';
     fs.writeFileSync(path.join(outDir, name), image.toPNG());

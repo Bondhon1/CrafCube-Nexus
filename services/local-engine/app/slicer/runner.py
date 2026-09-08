@@ -19,9 +19,11 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 
+from app.geometry.analyzer import MeshLoadError, load_mesh
 from app.gcode.parser import GcodeResult, parse_gcode
 from app.slicer.discovery import SlicerInfo, preferred_slicer
 from app.slicer.profiles import ProfileError, resolve
+from app.three_mf.reader import inspect_3mf
 
 # Slicing a dense mesh is genuinely slow; this is a ceiling, not a target.
 DEFAULT_TIMEOUT_SECONDS = 300
@@ -66,6 +68,31 @@ def _build_args(
         "--load-filaments", str(filament),
         str(model),
     ]
+
+
+def _prepare_input(model_path: Path, workdir: Path) -> tuple[Path, str | None]:
+    """Give the slicer a file its CLI will actually accept.
+
+    OrcaSlicer's CLI rejects many perfectly valid mesh-only 3MF files — the ones
+    people download from model sites — with a bare `Slic3r::CLI::run found
+    error` and no detail. trimesh reads them without complaint, so anything that
+    is not already STL is converted first.
+
+    A *sliced project* 3MF is different: it carries the slicer's own figures,
+    which §41 ranks above anything we can recompute, and the caller checks for
+    that before reaching here.
+    """
+    if model_path.suffix.lower() == ".stl":
+        return model_path, None
+
+    try:
+        mesh = load_mesh(str(model_path))
+    except MeshLoadError as exc:
+        raise ValueError(f"could not read {model_path.name}: {exc}") from exc
+
+    converted = workdir / f"{model_path.stem}.stl"
+    converted.write_bytes(mesh.export(file_type="stl"))
+    return converted, f"{model_path.suffix.lstrip('.')} converted to STL for slicing"
 
 
 def slice_model(
@@ -119,8 +146,13 @@ def slice_model(
                 error=f"could not resolve slicer profiles: {exc}",
             )
 
+        try:
+            sliceable, conversion_note = _prepare_input(model_path, workdir)
+        except ValueError as exc:
+            return SliceResult(False, chosen.name, time.monotonic() - started, error=str(exc))
+
         args = _build_args(
-            chosen.executable, model_path, workdir,
+            chosen.executable, sliceable, workdir,
             profiles.machine, profiles.process, profiles.filament,
         )
         try:
@@ -174,7 +206,7 @@ def slice_model(
             gcode_path=str(kept),
             stdout=completed.stdout[-2000:],
             stderr=completed.stderr[-2000:],
-            warnings=parsed.warnings,
+            warnings=parsed.warnings + ([conversion_note] if conversion_note else []),
         )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

@@ -65,15 +65,56 @@ G1 X20 E1.0
 """.strip().splitlines()
 
 
-def test_retractions_are_not_subtracted():
-    """Filament pulled back is pushed out again.
+def test_unretracting_is_not_consumption():
+    """A retraction and its matching push-back deposit nothing.
 
-    Netting retraction against extrusion would understate usage; counting the
-    unretract as consumption would overstate it. Only positive deltas count, so
-    the total here is 1.0 + 5.0 + 1.0.
+    Counting every positive E move as material treats each un-retract as fresh
+    filament. On a real print that overstated usage by 39% — the parser
+    disagreed with the slicer by a third and the discrepancy looked like a
+    slicer problem rather than an arithmetic one.
+
+    Here 1.0 is laid down, 5.0 is withdrawn, 5.0 repays that withdrawal, and
+    1.0 more is laid down: 2.0 total.
     """
     result = parse_gcode(RETRACTION)
-    assert result.calculated_filament_mm == pytest.approx(7.0)
+    assert result.calculated_filament_mm == pytest.approx(2.0)
+
+
+def test_partial_unretract_repays_before_depositing():
+    lines = """
+M83
+G1 X10 E1.0
+G1 E-5.0
+G1 E7.0
+""".strip().splitlines()
+    # 5.0 of the 7.0 repays the retraction; 2.0 is new material, plus the 1.0.
+    assert parse_gcode(lines).calculated_filament_mm == pytest.approx(3.0)
+
+
+def test_layer_count_prefers_the_declared_total():
+    lines = """
+; total layer number: 40
+M83
+G1 Z0.2
+G1 Z1.0
+G1 Z0.4
+""".strip().splitlines()
+    # Z-hops would otherwise inflate the count; the file states the truth.
+    assert parse_gcode(lines).layer_count == 40
+
+
+def test_layer_change_markers_beat_counting_z_rises():
+    lines = """
+M83
+G1 Z0.2
+;LAYER_CHANGE
+G1 Z0.6
+G1 Z0.4
+;LAYER_CHANGE
+G1 Z0.6
+""".strip().splitlines()
+    # Four Z increases, two real layers.
+    assert parse_gcode(lines).layer_count == 2
 
 
 def test_g92_reset_does_not_create_phantom_extrusion():

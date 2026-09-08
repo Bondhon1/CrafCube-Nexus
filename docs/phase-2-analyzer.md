@@ -190,3 +190,47 @@ Levels A, B and C all work, 3MF is inspected as an archive, and preview and
 thumbnails are in place. Remaining slicer work is incremental — multi-plate
 3MF handling and per-filament assignment for multi-colour prints — and belongs
 with the print-job system in phase 4.
+
+## Three bugs behind one "Slice doesn't work" (2026-09-08)
+
+### 1. A stale engine kept answering
+
+`startEngine` adopted whatever was already listening on the port. A uvicorn
+process started before the discovery fix was still running, so the app used old
+code and reported "no slicer installed" — while a fresh process found the
+slicer perfectly. My verification runs kept passing because each started clean.
+
+The engine now reports a version, and the app refuses to adopt one that does not
+match the build it expects: it stops it by the pid the service itself reports
+and starts a fresh one. The screenshot harness does the same, so captures can
+never show stale engine behaviour either.
+
+### 2. OrcaSlicer's CLI rejects mesh-only 3MF
+
+Both `--load-settings` and the file's own config failed identically with a bare
+`Slic3r::CLI::run found error` and empty stderr, so it was the file, not the
+profiles. trimesh reads these fine, so anything that is not already STL is
+converted before slicing. A *sliced project* 3MF is still handled by
+`inspect_3mf`, which reads the slicer's own figures — §41 ranks those higher
+than anything we can recompute.
+
+### 3. The G-code parser overstated filament by 39%
+
+With the slice finally working, the parser reported 25.6 g against the slicer's
+18.41 g, and **3023 layers for a 40-layer print**.
+
+Both had the same root: counting every positive E move as material. In relative
+mode an un-retract is a positive move that only pushes back filament previously
+withdrawn — it deposits nothing. The parser now tracks outstanding retraction
+and counts only the surplus. Layer counts prefer the slicer's declared total,
+then explicit `LAYER_CHANGE` markers, and fall back to counting Z rises last,
+because a retraction z-hop looks exactly like a layer change.
+
+**The earlier test asserted the wrong answer.** `test_retractions_are_not_
+subtracted` expected the un-retract to count, which is what made the bug look
+correct. It is now `test_unretracting_is_not_consumption`, with the reasoning
+written down.
+
+Result on the real model: **18.411 g computed against 18.41 g declared — 0.01%
+apart, HIGH confidence, 40 layers.** The independent check now corroborates the
+slicer instead of contradicting it.

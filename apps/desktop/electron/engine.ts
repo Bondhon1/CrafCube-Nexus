@@ -14,6 +14,17 @@ import { app } from 'electron';
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.NEXUS_ENGINE_PORT ?? 8765);
 
+/**
+ * Engine build this app expects, matching VERSION in services/local-engine.
+ *
+ * Reusing whatever already listens on the port is convenient in development,
+ * but it silently pinned the app to an engine started before a code change —
+ * a fixed slicer-discovery bug kept reporting "no slicer installed" because
+ * the old process was still answering. Bump this whenever engine behaviour
+ * the app depends on changes.
+ */
+const EXPECTED_VERSION = '0.2.0';
+
 export const engineBaseUrl = `http://${HOST}:${PORT}`;
 
 export type EngineState = 'stopped' | 'starting' | 'ready' | 'unavailable';
@@ -42,26 +53,58 @@ function pythonExecutable(root: string): string | null {
   return null;
 }
 
-async function probe(timeoutMs = 1500): Promise<boolean> {
+interface EngineIdentity {
+  version: string;
+  pid: number;
+}
+
+/** Reads /status, or null when nothing is answering. */
+async function identify(timeoutMs = 1500): Promise<EngineIdentity | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const response = await fetch(`${engineBaseUrl}/status`, { signal: controller.signal });
     clearTimeout(timer);
-    return response.ok;
+    if (!response.ok) return null;
+    const body = (await response.json()) as { version?: string; pid?: number };
+    return { version: body.version ?? 'unknown', pid: Number(body.pid ?? 0) };
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function probe(timeoutMs = 1500): Promise<boolean> {
+  return (await identify(timeoutMs)) !== null;
 }
 
 export async function startEngine(): Promise<EngineState> {
   if (state === 'ready' || state === 'starting') return state;
 
-  // An engine already running — started by hand during development — is reused
-  // rather than fought over the port.
-  if (await probe()) {
-    state = 'ready';
-    return state;
+  // An engine already running — started by hand during development — is reused,
+  // but only when it is the build this app expects. An outdated one is stopped
+  // rather than adopted, because adopting it makes fixed bugs look unfixed.
+  const existing = await identify();
+  if (existing) {
+    if (existing.version === EXPECTED_VERSION) {
+      state = 'ready';
+      return state;
+    }
+
+    lastError =
+      `Replacing engine ${existing.version} (pid ${existing.pid}); ` +
+      `this app expects ${EXPECTED_VERSION}.`;
+    try {
+      // Same machine, loopback only, and the pid comes from our own service.
+      process.kill(existing.pid);
+    } catch {
+      state = 'unavailable';
+      lastError =
+        `An engine running version ${existing.version} holds port ${PORT} and could not be ` +
+        `stopped. Close it and restart the app.`;
+      return state;
+    }
+    // Give the port a moment to clear before binding it.
+    await new Promise((resolve) => setTimeout(resolve, 700));
   }
 
   const root = engineRoot();
