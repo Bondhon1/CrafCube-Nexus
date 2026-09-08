@@ -7,8 +7,8 @@ Full blueprint: [3D_Artifact_Business_Management_System_Design.md](3D_Artifact_B
 
 | Phase | Scope | State |
 |---|---|---|
-| 1 | Auth, orgs, roles, audit log, filament inventory, printers | **done** |
-| 2 | Model library, R2 storage, geometry analysis, slicer + G-code | next |
+| 1 | Auth, orgs, roles, audit, inventory, printers, model library | **done** (thumbnails pending) |
+| 2 | Geometry analysis, thumbnails, 3D preview, slicer + G-code | next |
 | 3 | Costing and pricing engine | planned |
 | 4 | Print jobs, queue, inventory consumption | planned |
 | 5 | Sales, orders, finance | planned |

@@ -300,3 +300,71 @@ number at insert time, so two people registering spools at once cannot collide.
 | Null weight creates the product with no spool | pass |
 | Viewer blocked from the RPC and from a direct insert | pass |
 | Viewer can still read materials | pass |
+
+## Model library (2026-09-08)
+
+### Storage backend
+
+Design doc §44 targets Cloudflare R2, but R2 requires an active subscription —
+Cloudflare's own prerequisite is "a Cloudflare account with an R2 subscription",
+obtained through a dashboard checkout, so a payment method is needed even though
+the free tier costs nothing. Supabase Storage backs the library for now: no
+extra account, and it reuses the RLS already in place.
+
+`src/lib/storage.ts` defines an `ObjectStore` interface with the Supabase
+implementation behind it, so moving to R2 means adding a second implementation
+and issuing presigned URLs from an edge function, with nothing above that file
+changing. Current limits to be aware of: 1 GB storage, 5 GB egress, and a
+**50 MB per-file cap**, which a dense 3MF or a long G-code file can exceed.
+
+### Schema (§13-§17)
+
+- `models` with provenance as first-class columns — generation method, tool,
+  prompt, source reference and licence — because §15 calls these out as
+  valuable for commercial licensing, and free text would not be queryable.
+- `model_versions`, never overwritten (§14). Provenance repeats per version, so
+  a hand-made v1 and an AI-remixed v3 each record their own origin. Geometry
+  columns are present but null until the phase 2 analyzer fills them.
+- `model_files` with a SHA-256 per file and a per-organization hash index.
+
+### Duplicate detection (§17, §78)
+
+The client hashes before uploading and calls `find_duplicate_file()`. When the
+organization already holds those exact bytes, the upload is skipped entirely and
+only the database reference is new — the UI says so before you commit.
+
+### Object layout and authorization (§77)
+
+Private bucket. Keys are
+`<organization_id>/models/<model_id>/v<version>/<sha256><ext>`, so the storage
+policies authorize on the path itself: the first segment is the organization id
+and every policy checks membership against it.
+
+### A trap worth recording
+
+`storage.buckets` ships with RLS enabled and **no policies**, so a bucket
+inserted by migration is invisible to every caller — bucket listing returns `[]`
+and every object call fails with `NoSuchBucket`, even though the row exists and
+the `storage.objects` policies are correct. Migration
+`20260908000500_storage_bucket_visibility.sql` adds the missing select policy.
+
+Supabase also now blocks direct deletes from storage tables
+("Direct deletion from storage tables is not allowed"), so bucket teardown must
+go through the Storage API.
+
+### Verified against the live project
+
+| Check | Result |
+|---|---|
+| Upload under the caller's own org prefix | pass |
+| Upload under another org's prefix rejected by RLS | pass |
+| Signed URL returns byte-identical content | pass |
+| Anonymous download refused | pass |
+| Duplicate detection finds a previously stored hash | pass |
+
+### Not done
+
+**Thumbnails.** §86 lists them under phase 1, but generating one means rendering
+the mesh, which is the same work as the §80 3D preview and belongs with the
+phase 2 analyzer. The `model_files` table already has a `thumbnail` kind waiting
+for it.

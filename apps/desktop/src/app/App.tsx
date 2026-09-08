@@ -14,6 +14,8 @@ import { Filaments } from '@/pages/inventory/Filaments';
 import { Spools } from '@/pages/inventory/Spools';
 import { Transactions } from '@/pages/inventory/Transactions';
 import { Machines } from '@/pages/printers/Machines';
+import { Library } from '@/pages/models/Library';
+import { Upload } from '@/pages/models/Upload';
 import { Profiles } from '@/pages/printers/Profiles';
 import { NAVIGATION } from '@/app/navigation';
 import { WindowControls } from '@/components/WindowControls';
@@ -48,6 +50,8 @@ const IMPLEMENTED = new Set([
   '/inventory/transactions',
   '/printers/machines',
   '/printers/profiles',
+  '/models/library',
+  '/models/upload',
 ]);
 
 function Shell() {
@@ -65,6 +69,8 @@ function Shell() {
             <Route path="/inventory/filaments" element={<Filaments />} />
             <Route path="/inventory/spools" element={<Spools />} />
             <Route path="/inventory/transactions" element={<Transactions />} />
+            <Route path="/models/library" element={<Library />} />
+            <Route path="/models/upload" element={<Upload />} />
             <Route path="/printers/machines" element={<Machines />} />
             <Route path="/printers/profiles" element={<Profiles />} />
             {NAVIGATION.flatMap((s) => s.children ?? [])

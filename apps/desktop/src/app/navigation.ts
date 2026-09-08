@@ -36,8 +36,8 @@ export const NAVIGATION: NavSection[] = [
     icon: '⬢',
     capability: 'models.read',
     children: [
-      { label: 'Library', path: '/models/library', phase: 2 },
-      { label: 'Upload', path: '/models/upload', phase: 2 },
+      { label: 'Library', path: '/models/library' },
+      { label: 'Upload', path: '/models/upload' },
       { label: 'Analysis', path: '/models/analysis', phase: 2 },
       { label: 'Versions', path: '/models/versions', phase: 2 },
     ],
@@ -118,7 +118,7 @@ export const NAVIGATION: NavSection[] = [
       { label: 'Cost Profiles', path: '/settings/cost-profiles', phase: 3 },
       { label: 'Slicer', path: '/settings/slicer', phase: 2 },
       { label: 'Notifications', path: '/settings/notifications', phase: 6 },
-      { label: 'Storage', path: '/settings/storage', phase: 2 },
+      { label: 'Storage', path: '/settings/storage', phase: 3 },
     ],
   },
 ];

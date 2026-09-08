@@ -1,0 +1,103 @@
+/** Model library, versioning and files (design doc §13-§17). */
+
+import type { Timestamp, UUID } from './entities.js';
+
+export const GENERATION_METHODS = [
+  'ai', 'python', 'manual', 'remix', 'purchased', 'customer_supplied',
+] as const;
+
+export type GenerationMethod = (typeof GENERATION_METHODS)[number];
+
+export const GENERATION_METHOD_LABELS: Record<GenerationMethod, string> = {
+  ai: 'AI generated',
+  python: 'Python',
+  manual: 'Manual',
+  remix: 'Remix',
+  purchased: 'Purchased',
+  customer_supplied: 'Customer supplied',
+};
+
+export const MODEL_LICENSES = ['commercial', 'personal', 'unknown', 'restricted'] as const;
+
+export type ModelLicense = (typeof MODEL_LICENSES)[number];
+
+export const MODEL_LICENSE_LABELS: Record<ModelLicense, string> = {
+  commercial: 'Commercial',
+  personal: 'Personal',
+  unknown: 'Unknown',
+  restricted: 'Restricted',
+};
+
+export interface Model {
+  id: UUID;
+  organization_id: UUID;
+  name: string;
+  category: string | null;
+  description: string | null;
+  tags: string[];
+  generation_method: GenerationMethod;
+  generation_tool: string | null;
+  prompt: string | null;
+  source_reference: string | null;
+  license: ModelLicense;
+  rec_layer_height_mm: number | null;
+  rec_infill_percent: number | null;
+  rec_wall_count: number | null;
+  rec_material: string | null;
+  archived: boolean;
+  created_by: UUID | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface ModelVersion {
+  id: UUID;
+  organization_id: UUID;
+  model_id: UUID;
+  version: number;
+  notes: string | null;
+  generation_method: GenerationMethod | null;
+  generation_tool: string | null;
+  prompt: string | null;
+  /** Null until the phase 2 analyzer has run over the version. */
+  width_mm: number | null;
+  depth_mm: number | null;
+  height_mm: number | null;
+  volume_cm3: number | null;
+  triangle_count: number | null;
+  is_manifold: boolean | null;
+  created_by: UUID | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type ModelFileKind =
+  | 'source' | 'mesh' | 'project' | 'gcode' | 'thumbnail' | 'render' | 'other';
+
+export interface ModelFile {
+  id: UUID;
+  organization_id: UUID;
+  version_id: UUID;
+  kind: ModelFileKind;
+  filename: string;
+  extension: string | null;
+  storage_key: string;
+  byte_size: number;
+  content_type: string | null;
+  /** SHA-256 of the contents, used for duplicate detection. */
+  sha256: string;
+  created_by: UUID | null;
+  created_at: Timestamp;
+}
+
+/** Row shape returned by the `find_duplicate_file` RPC. */
+export interface DuplicateFile {
+  file_id: UUID;
+  filename: string;
+  storage_key: string;
+  byte_size: number;
+  model_id: UUID;
+  model_name: string;
+  version: number;
+  uploaded_at: Timestamp;
+}
