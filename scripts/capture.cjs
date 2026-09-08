@@ -11,6 +11,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const { spawn } = require('node:child_process');
 
 const [outDir, ...routes] = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const APP_DIR = path.join(__dirname, '..', 'apps', 'desktop');
@@ -25,6 +26,68 @@ function env() {
   return out;
 }
 
+const ENGINE_DIR = path.join(__dirname, '..', 'services', 'local-engine');
+const ENGINE = 'http://127.0.0.1:8765';
+let engineChild = null;
+
+const enginePing = async () => {
+  try { return (await fetch(ENGINE + '/status')).ok; } catch { return false; }
+};
+
+/** Screens that call the engine render as they really do only if it is up. */
+async function startEngine() {
+  if (await enginePing()) return true;
+  const python = path.join(ENGINE_DIR, '.venv', 'Scripts', 'python.exe');
+  if (!fs.existsSync(python)) return false;
+  engineChild = spawn(python, ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1',
+                               '--port', '8765', '--log-level', 'warning'],
+                      { cwd: ENGINE_DIR, stdio: 'ignore', windowsHide: true });
+  const deadline = Date.now() + 25000;
+  while (Date.now() < deadline) {
+    if (await enginePing()) return true;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return false;
+}
+
+const engineForm = (filename, bytes, fields = {}) => {
+  const form = new FormData();
+  form.append('file', new Blob([bytes]), filename);
+  for (const [k, v] of Object.entries(fields)) form.append(k, String(v));
+  return form;
+};
+
+ipcMain.handle('engine:mesh-preview', async (_e, filename, bytes) => {
+  const res = await fetch(ENGINE + '/mesh-preview', { method: 'POST', body: engineForm(filename, bytes) });
+  if (!res.ok) throw new Error(String(res.status));
+  return await res.arrayBuffer();
+});
+ipcMain.handle('engine:analyze', async (_e, filename, bytes, fields) => {
+  const res = await fetch(ENGINE + '/analyze', { method: 'POST', body: engineForm(filename, bytes, fields) });
+  return await res.json();
+});
+ipcMain.handle('engine:slice', async (_e, filename, bytes, fields) => {
+  const res = await fetch(ENGINE + '/slice', { method: 'POST', body: engineForm(filename, bytes, fields) });
+  return await res.json();
+});
+ipcMain.handle('engine:status', async () => ({
+  state: (await enginePing()) ? 'ready' : 'unavailable', baseUrl: ENGINE, error: null, capabilities: null,
+}));
+ipcMain.handle('engine:start', () => 'ready');
+
+// Object transfers, mirroring electron/main.ts so signed URLs behave the same.
+ipcMain.handle('storage:put', async (_e, url, headers, body) => {
+  const res = await fetch(url, { method: 'PUT', headers, body });
+  if (!res.ok) throw new Error(String(res.status));
+  return { etag: res.headers.get('etag') };
+});
+ipcMain.handle('storage:get', async (_e, url) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(String(res.status));
+  return await res.arrayBuffer();
+});
+ipcMain.handle('storage:delete', async (_e, url) => (await fetch(url, { method: 'DELETE' })).ok);
+
 // The renderer's title bar probes these; the real handlers live in main.ts.
 ipcMain.handle('window:is-maximized', () => false);
 ipcMain.handle('window:minimize', () => {});
@@ -32,6 +95,7 @@ ipcMain.handle('window:toggle-maximize', () => false);
 ipcMain.handle('window:close', () => {});
 
 app.whenReady().then(async () => {
+  await startEngine();
   const { VITE_SUPABASE_URL: url, VITE_SUPABASE_ANON_KEY: key } = env();
   const ref = new URL(url).hostname.split('.')[0];
   const email = process.env.NEXUS_EMAIL;
@@ -91,7 +155,8 @@ app.whenReady().then(async () => {
         if (el) el.click();
         return Boolean(el);
       })()`);
-      await new Promise((r) => setTimeout(r, 1500));
+      // Converting and rendering a large mesh takes longer than a click.
+      await new Promise((r) => setTimeout(r, Number(process.env.NEXUS_CLICK_WAIT) || 1500));
     }
     const image = await win.webContents.capturePage();
     const name = (route.replace(/^\//, '').replace(/\//g, '-') || 'dashboard') + '.png';
@@ -99,5 +164,6 @@ app.whenReady().then(async () => {
     console.log('captured', name);
   }
 
+  if (engineChild) engineChild.kill();
   app.exit(0);
 });

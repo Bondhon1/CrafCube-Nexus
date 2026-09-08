@@ -55,6 +55,27 @@ interface GeometryAnalysis {
   };
 }
 
+interface SliceResponse {
+  status: 'success' | 'failed';
+  level: string;
+  slice: {
+    ok: boolean;
+    slicer_name: string | null;
+    duration_seconds: number;
+    error: string | null;
+    gcode: {
+      slicer_filament_grams: number | null;
+      calculated_filament_grams: number | null;
+      slicer_print_time_seconds: number | null;
+      layer_count: number;
+      per_tool_filament_mm: Record<string, number>;
+      density_g_cm3: number | null;
+      filament_diameter_mm: number;
+    } | null;
+  };
+  confidence?: { level: string; reason: string };
+}
+
 interface EngineStatus {
   state: 'stopped' | 'starting' | 'ready' | 'unavailable';
   baseUrl: string;
@@ -81,6 +102,11 @@ interface NexusEngine {
   ): Promise<unknown>;
   /** STL bytes for any supported mesh format. */
   meshPreview(filename: string, bytes: ArrayBuffer): Promise<ArrayBuffer>;
+  slice(
+    filename: string,
+    bytes: ArrayBuffer,
+    fields: Record<string, string | number>,
+  ): Promise<SliceResponse>;
 }
 
 interface NexusBridge {

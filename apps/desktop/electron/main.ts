@@ -104,6 +104,14 @@ ipcMain.handle(
     engineUploadBinary('/mesh-preview', filename, bytes),
 );
 
+// A real slice is the primary costing source (§4 level B), so the job form
+// calls this rather than asking an operator to guess grams.
+ipcMain.handle(
+  'engine:slice',
+  (_event, filename: string, bytes: ArrayBuffer, fields: Record<string, string | number>) =>
+    engineUpload('/slice', filename, bytes, fields),
+);
+
 ipcMain.handle(
   'engine:parse-gcode',
   (_event, filename: string, bytes: ArrayBuffer, fields: Record<string, string | number>) =>

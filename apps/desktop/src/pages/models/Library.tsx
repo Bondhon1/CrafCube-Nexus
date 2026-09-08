@@ -4,8 +4,9 @@ import type { Model, ModelFile, ModelVersion } from '@crafcube/types';
 import { GENERATION_METHOD_LABELS, MODEL_LICENSE_LABELS } from '@crafcube/types';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/app/SessionProvider';
-import { formatBytes, objectStore } from '@/lib/storage';
+import { formatBytes, objectStore, sha256 } from '@/lib/storage';
 import { ModelsIcon } from '@/components/icons';
+import { ModelPreview, renderThumbnail } from '@/components/ModelPreview';
 import {
   Badge, EmptyRow, ErrorNote, Modal, PageHeader, Panel, Row, Table, Td, Th,
 } from '@/components/ui';
@@ -198,9 +199,69 @@ export function Library() {
 }
 
 function VersionsModal({ model, onClose }: { model: ModelRow; onClose: () => void }) {
+  const { activeOrg } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [mesh, setMesh] = useState<ArrayBuffer | null>(null);
+  const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'unavailable'>('idle');
   const versions = [...model.versions].sort((a, b) => b.version - a.version);
+  const latest = versions[0];
+
+  // Fetch and convert the source so the preview works for 3MF and OBJ too, not
+  // just STL. Thumbnails are written back, so this cost is paid once.
+  useEffect(() => {
+    const source = latest?.files.find((f) => f.kind === 'source' || f.kind === 'mesh');
+    const bridge = window.nexus?.engine;
+    if (!source || !bridge || !activeOrg) {
+      setPreviewState('unavailable');
+      return;
+    }
+
+    let cancelled = false;
+    setPreviewState('loading');
+
+    void (async () => {
+      try {
+        const blob = await objectStore.download(source.storage_key);
+        const buffer = await blob.arrayBuffer();
+        const stl = source.filename.toLowerCase().endsWith('.stl')
+          ? buffer
+          : await bridge.meshPreview(source.filename, buffer);
+        if (cancelled) return;
+        setMesh(stl);
+        setPreviewState('idle');
+
+        // Backfill a thumbnail for models uploaded before previews existed.
+        const hasThumbnail = latest.files.some((f) => f.kind === 'thumbnail');
+        if (!hasThumbnail) {
+          const png = await renderThumbnail(stl);
+          if (png && !cancelled) {
+            const key = `${activeOrg.id}/models/${model.id}/v${latest.version}/thumbnail.png`;
+            try {
+              await objectStore.upload(key, png, 'image/png');
+              await supabase.from('model_files').insert({
+                organization_id: activeOrg.id,
+                version_id: latest.id,
+                kind: 'thumbnail',
+                filename: 'thumbnail.png',
+                extension: '.png',
+                storage_key: key,
+                byte_size: png.size,
+                content_type: 'image/png',
+                sha256: await sha256(png),
+              });
+            } catch {
+              // A missing thumbnail is cosmetic; never surface it as an error.
+            }
+          }
+        }
+      } catch {
+        if (!cancelled) setPreviewState('unavailable');
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [latest, model.id, activeOrg]);
 
   /**
    * The viewer sandbox blocks download links, so the file is fetched through a
@@ -228,6 +289,20 @@ function VersionsModal({ model, onClose }: { model: ModelRow; onClose: () => voi
       <ErrorNote message={error} />
 
       {model.description && <p className="mb-4 text-sm text-slate-400">{model.description}</p>}
+
+      {mesh ? (
+        <div className="mb-4">
+          <ModelPreview buffer={mesh} height={240} />
+          <p className="mt-1.5 text-center text-[11px] text-slate-600">Drag to rotate</p>
+        </div>
+      ) : (
+        <div className="mb-4 grid h-[240px] place-items-center rounded-lg border border-line
+                        bg-ink-950/50 text-xs text-slate-600">
+          {previewState === 'loading'
+            ? 'Preparing preview…'
+            : 'Preview needs the local engine running.'}
+        </div>
+      )}
 
       <div className="space-y-3">
         {versions.map((v) => (

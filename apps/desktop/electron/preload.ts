@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('nexus', {
       ipcRenderer.invoke('engine:parse-gcode', filename, bytes, fields),
     meshPreview: (filename: string, bytes: ArrayBuffer): Promise<ArrayBuffer> =>
       ipcRenderer.invoke('engine:mesh-preview', filename, bytes),
+    slice: (filename: string, bytes: ArrayBuffer, fields: Record<string, string | number>) =>
+      ipcRenderer.invoke('engine:slice', filename, bytes, fields),
   },
 
   /** Object transfers, run in the main process so no CORS check applies. */

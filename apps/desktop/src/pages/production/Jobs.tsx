@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
-  FilamentSpool, JobAccuracy, Model, PrintJob, PrintJobStatus, Printer,
+  FilamentSpool, JobAccuracy, PrintJob, PrintJobStatus, Printer,
 } from '@crafcube/types';
 import {
   JOB_STATUS_LABELS, NEXT_STATUSES, calibrationFactor, formatDuration, isTerminal,
@@ -11,6 +11,7 @@ import {
   Badge, EmptyRow, ErrorNote, Field, Grams, Modal, Money,
   PageHeader, Panel, Row, Table, Td, Th,
 } from '@/components/ui';
+import { NewJobModal } from '@/pages/production/NewJobModal';
 
 interface JobRow extends PrintJob {
   printer: Pick<Printer, 'id' | 'name'> | null;
@@ -270,145 +271,6 @@ function Calib({ label, factor }: { label: string; factor: number | null }) {
 function ErrorChip({ value }: { value: number }) {
   const tone = Math.abs(value) <= 5 ? 'mint' : Math.abs(value) <= 15 ? 'amber' : 'red';
   return <Badge tone={tone}>{value > 0 ? '+' : ''}{value.toFixed(1)}%</Badge>;
-}
-
-function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const { activeOrg } = useSession();
-  const [models, setModels] = useState<Model[]>([]);
-  const [printers, setPrinters] = useState<Printer[]>([]);
-  const [spools, setSpools] = useState<(FilamentSpool & { product: { name: string } | null })[]>([]);
-
-  const [modelId, setModelId] = useState('');
-  const [printerId, setPrinterId] = useState('');
-  const [spoolId, setSpoolId] = useState('');
-  const [quantity, setQuantity] = useState('1');
-  const [grams, setGrams] = useState('');
-  const [hours, setHours] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!activeOrg) return;
-    void (async () => {
-      const [m, p, s] = await Promise.all([
-        supabase.from('models').select('*').eq('organization_id', activeOrg.id)
-          .eq('archived', false).order('name'),
-        supabase.from('printers').select('*').eq('organization_id', activeOrg.id)
-          .neq('status', 'retired').order('name'),
-        supabase.from('filament_spools')
-          .select('*, product:filament_products(name)')
-          .eq('organization_id', activeOrg.id).in('status', ['sealed', 'in_use'])
-          .order('code'),
-      ]);
-      setModels((m.data ?? []) as Model[]);
-      setPrinters((p.data ?? []) as Printer[]);
-      setSpools((s.data ?? []) as never);
-      setPrinterId((c) => c || (p.data?.[0] as Printer | undefined)?.id || '');
-    })();
-  }, [activeOrg]);
-
-  const spool = spools.find((s) => s.id === spoolId);
-  const totalGrams = (Number(grams) || 0) * (Number(quantity) || 1);
-  const shortfall = spool ? totalGrams - Number(spool.remaining_grams) : 0;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!activeOrg) return;
-    setBusy(true);
-    setError(null);
-
-    const { data: code, error: codeErr } = await supabase.rpc('next_job_code', {
-      p_org: activeOrg.id,
-    });
-    if (codeErr) { setError(codeErr.message); setBusy(false); return; }
-
-    const { error: err } = await supabase.from('print_jobs').insert({
-      organization_id: activeOrg.id,
-      code,
-      model_version_id: null,
-      printer_id: printerId || null,
-      spool_id: spoolId || null,
-      quantity: Number(quantity) || 1,
-      estimated_grams: totalGrams,
-      estimated_seconds: Math.round((Number(hours) || 0) * 3600) * (Number(quantity) || 1),
-      notes: modelId ? models.find((m) => m.id === modelId)?.name ?? null : null,
-    });
-
-    if (err) setError(err.message);
-    else onSaved();
-    setBusy(false);
-  }
-
-  return (
-    <Modal title="New print job" onClose={onClose} width="w-[520px]">
-      <form onSubmit={submit} className="space-y-4">
-        <ErrorNote message={error} />
-
-        <Field label="Model">
-          <select className="field" value={modelId} onChange={(e) => setModelId(e.target.value)}>
-            <option value="">Not from the library</option>
-            {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-        </Field>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Printer">
-            <select className="field" value={printerId}
-                    onChange={(e) => setPrinterId(e.target.value)}>
-              <option value="">Unassigned</option>
-              {printers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Spool" hint="Material is reserved from this spool.">
-            <select className="field" value={spoolId} onChange={(e) => setSpoolId(e.target.value)}>
-              <option value="">None</option>
-              {spools.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.code} — {Math.round(Number(s.remaining_grams))} g
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-
-        <div className="grid grid-cols-3 gap-4">
-          <Field label="Quantity">
-            <input required type="number" min="1" className="field" value={quantity}
-                   onChange={(e) => setQuantity(e.target.value)} />
-          </Field>
-          <Field label="Grams each">
-            <input required type="number" step="0.1" min="0" className="field" value={grams}
-                   onChange={(e) => setGrams(e.target.value)} />
-          </Field>
-          <Field label="Hours each">
-            <input type="number" step="0.25" min="0" className="field" value={hours}
-                   onChange={(e) => setHours(e.target.value)} />
-          </Field>
-        </div>
-
-        {spool && totalGrams > 0 && (
-          <div className={`rounded-lg border px-4 py-3 text-sm ${
-            shortfall > 0
-              ? 'border-red-500/30 bg-red-500/10 text-red-300'
-              : 'border-line bg-ink-950/50 text-slate-400'
-          }`}>
-            {shortfall > 0
-              ? `Needs ${totalGrams.toFixed(0)} g but ${spool.code} holds ` +
-                `${Number(spool.remaining_grams).toFixed(0)} g — ${shortfall.toFixed(0)} g short.`
-              : `Needs ${totalGrams.toFixed(0)} g of ${Number(spool.remaining_grams).toFixed(0)} g ` +
-                `available on ${spool.code}.`}
-          </div>
-        )}
-
-        <div className="modal-actions">
-          <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
-          <button type="submit" disabled={busy} className="btn-primary">
-            {busy ? 'Queuing…' : 'Queue job'}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
 }
 
 /**
