@@ -373,3 +373,22 @@ go through the Storage API.
 the mesh, which is the same work as the §80 3D preview and belongs with the
 phase 2 analyzer. The `model_files` table already has a `thumbnail` kind waiting
 for it.
+
+## Fix: Users screen could not load members (2026-09-08)
+
+`organization_members` embedded `profiles` to show names and emails, but
+PostgREST only embeds across a foreign key, and the two tables were never
+linked — both referenced `auth.users` independently. The query failed with
+PGRST200 and the screen showed no members.
+
+Adding `organization_members.user_id -> profiles.id` fixes it. It is safe
+because `handle_new_user()` creates the profile on the same statement that
+creates the auth user, so a membership can never precede its profile; no
+existing row was orphaned. The original FK to `auth.users` stays.
+
+The migration also issues `notify pgrst, 'reload schema'`, because PostgREST
+caches relationships and would otherwise ignore the new one until it restarted.
+
+All five embedded queries in the app were then checked, not just the reported
+one: memberships→organizations, spools→products, transactions→spools,
+models→versions→files, and members→profiles. All resolve.
