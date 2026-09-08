@@ -124,6 +124,21 @@ def connect(params: dict[str, object]):
     raise last if last else RuntimeError("no connection attempted")
 
 
+LEDGER_DDL = """
+create table if not exists public.schema_migrations (
+  filename   text primary key,
+  applied_at timestamptz not null default now()
+)
+"""
+
+
+def applied_set(conn) -> set[str]:
+    with conn, conn.cursor() as cur:
+        cur.execute(LEDGER_DDL)
+        cur.execute("select filename from public.schema_migrations")
+        return {row[0] for row in cur.fetchall()}
+
+
 def main() -> int:
     params = connection_params(raw_url())
     files = sorted((ROOT / "migrations").glob("*.sql"))
@@ -136,20 +151,32 @@ def main() -> int:
         print(f"CONNECT FAILED: {exc}")
         return 2
 
+    done = applied_set(conn)
+    ran = 0
     try:
         for path in files:
+            if path.name in done:
+                print(f"SKIP  {path.name}")
+                continue
             sql = path.read_text(encoding="utf-8")
             try:
+                # The migration and its ledger row commit together, so a failure
+                # can never leave a file recorded as applied.
                 with conn, conn.cursor() as cur:
                     cur.execute(sql)
+                    cur.execute(
+                        "insert into public.schema_migrations (filename) values (%s)",
+                        (path.name,),
+                    )
             except Exception as exc:  # noqa: BLE001 - report and stop
                 print(f"FAIL  {path.name}\n{exc}")
                 return 1
             print(f"OK    {path.name}")
+            ran += 1
     finally:
         conn.close()
 
-    print(f"\nApplied {len(files)} migration(s).")
+    print(f"\nApplied {ran} migration(s), skipped {len(files) - ran}.")
     return 0
 
 
