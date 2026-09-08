@@ -311,6 +311,11 @@ obtained through a dashboard checkout, so a payment method is needed even though
 the free tier costs nothing. Supabase Storage backs the library for now: no
 extra account, and it reuses the RLS already in place.
 
+Cloudinary, Backblaze B2 and R2 were compared before settling on this;
+**Backblaze B2** is the chosen upgrade path (no card, 10 GB, S3-compatible) and
+Cloudinary was rejected mainly for its 10 MB cap on raw files. Full comparison
+and migration path: [storage-backend.md](./storage-backend.md).
+
 `src/lib/storage.ts` defines an `ObjectStore` interface with the Supabase
 implementation behind it, so moving to R2 means adding a second implementation
 and issuing presigned URLs from an edge function, with nothing above that file

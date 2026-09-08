@@ -20,8 +20,12 @@ Full blueprint: [3D_Artifact_Business_Management_System_Design.md](3D_Artifact_B
 apps/desktop      Electron + React + TypeScript + Vite + Tailwind
 packages/types    Shared domain types, roles and capability matrix
 supabase/         PostgreSQL migrations (schema, functions, RLS)
-docs/             Phase notes
+scripts/          Headless screenshot harness
+docs/             Phase notes and decision records
 ```
+
+Object storage runs on Supabase Storage rather than the Cloudflare R2 of §44,
+because R2 needs a payment method. See [docs/storage-backend.md](docs/storage-backend.md).
 
 ## Setup
 

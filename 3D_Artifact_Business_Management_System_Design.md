@@ -1838,6 +1838,23 @@ https://developers.cloudflare.com/r2/pricing/
 
 ---
 
+**Implementation note (2026-09-08):** R2 requires an active R2 subscription,
+which means a payment method on the Cloudflare account even for free-tier usage.
+The build therefore ships on **Supabase Storage** behind an `ObjectStore`
+interface, with **Backblaze B2** as the chosen upgrade path — no card, 10 GB
+free, and S3-compatible, so the same adapter serves B2 or R2.
+
+Supabase Storage is also the only candidate that satisfies §77's
+"authorization should be database-driven" natively: its object policies call the
+same membership functions as the rest of the schema. Every alternative needs a
+presigning service before files can be private.
+
+Current constraints: 1 GB storage, 5 GB egress, 50 MB per file.
+
+See `docs/storage-backend.md` for the full comparison and migration path.
+
+---
+
 # 45. Supabase Recommendation
 
 Supabase is a good fit for:
