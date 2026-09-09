@@ -3,7 +3,7 @@
 3D-print business management system — inventory, production, costing, pricing and finance.
 Full blueprint: [3D_Artifact_Business_Management_System_Design.md](3D_Artifact_Business_Management_System_Design.md).
 
-## Status — Phase 1: Foundation
+## Status — Phase 5: Sales & Finance
 
 | Phase | Scope | State |
 |---|---|---|
@@ -11,8 +11,8 @@ Full blueprint: [3D_Artifact_Business_Management_System_Design.md](3D_Artifact_B
 | 2 | Geometry, slicing, G-code, 3MF, 3D preview, thumbnails | **done** |
 | 3 | Costing and pricing engine | **done** |
 | 4 | Print jobs, queue, inventory consumption | **done** |
-| 5 | Sales, orders, finance | next |
-| 6 | Analytics, calibration, forecasting | planned |
+| 5 | Sales, orders, payments, finance, P&L | **done** |
+| 6 | Analytics, calibration, forecasting | next |
 
 ## Layout
 

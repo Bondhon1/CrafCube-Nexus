@@ -20,6 +20,11 @@ import { CostProfiles } from '@/pages/settings/CostProfiles';
 import { Pricing } from '@/pages/settings/Pricing';
 import { Jobs } from '@/pages/production/Jobs';
 import { Profiles } from '@/pages/printers/Profiles';
+import { Customers } from '@/pages/sales/Customers';
+import { Orders } from '@/pages/sales/Orders';
+import { Products } from '@/pages/sales/Products';
+import { Quotations } from '@/pages/sales/Quotations';
+import { Finance } from '@/pages/finance/Finance';
 import { NAVIGATION } from '@/app/navigation';
 import { WindowControls } from '@/components/WindowControls';
 import { Atmosphere } from '@/components/Atmosphere';
@@ -62,6 +67,14 @@ const IMPLEMENTED = new Set([
   '/production/active',
   '/production/completed',
   '/production/failed',
+  '/sales/customers',
+  '/sales/orders',
+  '/sales/products',
+  '/sales/quotations',
+  '/finance/transactions',
+  '/finance/expenses',
+  '/finance/revenue',
+  '/finance/pnl',
 ]);
 
 function Shell() {
@@ -102,6 +115,26 @@ function Shell() {
             <Route path="/models/upload" element={<Upload />} />
             <Route path="/printers/machines" element={<Machines />} />
             <Route path="/printers/profiles" element={<Profiles />} />
+            <Route path="/sales/customers" element={<Customers />} />
+            <Route path="/sales/orders" element={<Orders />} />
+            <Route path="/sales/products" element={<Products />} />
+            <Route path="/sales/quotations" element={<Quotations />} />
+            <Route path="/finance/transactions" element={
+              <Finance view="transactions" title="Transactions"
+                       subtitle="Every income and expense line, newest first. Payments post their own income row." />
+            } />
+            <Route path="/finance/expenses" element={
+              <Finance view="expenses" title="Expenses"
+                       subtitle="What the business spends. Lines flagged COGS reduce gross profit; the rest are operating cost." />
+            } />
+            <Route path="/finance/revenue" element={
+              <Finance view="revenue" title="Revenue"
+                       subtitle="Money actually received. An order's total is not revenue until it is paid." />
+            } />
+            <Route path="/finance/pnl" element={
+              <Finance view="pnl" title="Profit &amp; loss"
+                       subtitle="Revenue less cost of goods sold, then less operating expenses, by month." />
+            } />
             {NAVIGATION.flatMap((s) => s.children ?? [])
               .filter((c) => !IMPLEMENTED.has(c.path))
               .map((c) => (
