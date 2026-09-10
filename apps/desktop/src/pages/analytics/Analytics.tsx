@@ -13,8 +13,24 @@ import {
   PageHeader, Panel, Row, Table, Td, Th,
 } from '@/components/ui';
 import { Figure, Meter, NotEnoughData } from '@/components/analytics';
+import {
+  ACCENT, BarChart, LineChart, RankedBars, SERIES, StackedBarChart,
+} from '@/components/charts';
+
+// The second categorical slot, for the paired comparison charts. Taken from the
+// fixed order rather than picked by eye, so it stays colour-blind safe.
+const SERIES_SECOND = SERIES[1];
 
 export type AnalyticsView = 'products' | 'printers' | 'materials' | 'waste' | 'profitability';
+
+/** "Sep", for a month key like 2026-09-01. */
+function monthShort(month: string): string {
+  return new Date(month).toLocaleDateString(undefined, { month: 'short' });
+}
+
+function kilos(grams: number): string {
+  return `${(grams / 1000).toFixed(1)} kg`;
+}
 
 /** Which tables each screen needs; nothing loads a view it will not render. */
 const SOURCES: Record<AnalyticsView, string[]> = {
@@ -141,6 +157,26 @@ function Products({ rows, currency }: { rows: ProductProfitability[]; currency: 
 
   return (
     <div className="space-y-6">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <RankedBars
+          title="Gross profit by product"
+          subtitle="What each product has actually earned, cheapest comparison first."
+          format={(v) => `${currency} ${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+          points={sold.slice(0, 8).map((p) => ({
+            label: p.name, value: Number(p.gross_profit),
+          }))}
+        />
+        <RankedBars
+          title="Units sold"
+          subtitle="Volume does not always follow profit — compare the two."
+          color={SERIES_SECOND}
+          format={(v) => v.toFixed(0)}
+          points={sold.slice(0, 8).map((p) => ({
+            label: p.name, value: Number(p.units_sold),
+          }))}
+        />
+      </div>
+
       <Panel>
         <Table
           head={
@@ -210,6 +246,24 @@ function Printers({ rows, currency }: { rows: PrinterAnalytics[]; currency: stri
 
   return (
     <div className="space-y-4">
+      {rows.length > 1 && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <RankedBars
+            title="Print hours by machine"
+            subtitle="Where the work actually happens."
+            format={(v) => formatDuration(v)}
+            points={rows.map((p) => ({ label: p.name, value: Number(p.print_seconds) }))}
+          />
+          <RankedBars
+            title="Filament through each machine"
+            subtitle="Output, measured in material rather than time."
+            color={SERIES_SECOND}
+            format={kilos}
+            points={rows.map((p) => ({ label: p.name, value: Number(p.filament_grams) }))}
+          />
+        </div>
+      )}
+
       {rows.map((p) => {
         const utilization = utilizationPercent(Number(p.print_seconds), p.purchased_at);
         // §72 wants profit attributable to the machine. Nothing in the schema
@@ -455,6 +509,20 @@ function Waste({
         </section>
       </div>
 
+      <StackedBarChart
+        title="Where filament goes, month by month"
+        subtitle="Everything above the first band left stock without becoming a product."
+        names={['Into product', 'Wasted', 'Samples', 'Drying loss']}
+        format={kilos}
+        points={months.slice().reverse().map((m) => ({
+          label: monthShort(m.month),
+          parts: [
+            Number(m.product_grams), Number(m.waste_grams),
+            Number(m.sample_grams), Number(m.drying_grams),
+          ],
+        }))}
+      />
+
       <Panel>
         <Table head={<><Th>Month</Th><Th right>Product</Th><Th right>Waste</Th>
           <Th right>Samples</Th><Th right>Drying</Th><Th right>Outside product</Th></>}>
@@ -498,6 +566,8 @@ function Profitability({
   currency: string;
 }) {
   const current = kpis[0];
+  // Charts read oldest first; the table below stays newest first.
+  const ordered = useMemo(() => kpis.slice().reverse(), [kpis]);
 
   const headline = useMemo(() => ({
     perHour: current?.profit_per_machine_hour ?? null,
@@ -533,6 +603,32 @@ function Profitability({
           value={headline.aov === null
             ? '—' : <Money value={headline.aov} currency={currency} />}
           hint={headline.aov === null ? 'no orders this month' : undefined}
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <LineChart
+          title="Profit per machine hour"
+          subtitle="The metric §69 singles out: what an hour of printing is worth."
+          format={(v) => `${currency} ${v.toFixed(0)}`}
+          series={[{
+            name: 'Profit / hour',
+            points: ordered.map((k) => ({
+              label: monthShort(k.month),
+              value: k.profit_per_machine_hour === null
+                ? null : Number(k.profit_per_machine_hour),
+            })),
+          }]}
+        />
+        <BarChart
+          title="Net profit by month"
+          subtitle="Revenue less every cost, including the ones below gross profit."
+          color={ACCENT}
+          format={(v) => `${currency} ${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+          points={ordered.map((k) => ({
+            label: monthShort(k.month),
+            value: k.net_profit === null ? null : Number(k.net_profit),
+          }))}
         />
       </div>
 

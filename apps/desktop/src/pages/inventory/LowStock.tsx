@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/app/SessionProvider';
 import { Badge, ErrorNote, Field, Grams, Modal, PageHeader } from '@/components/ui';
 import { Figure, NotEnoughData } from '@/components/analytics';
+import { RankedBars } from '@/components/charts';
 
 const LEVEL_TONE = {
   critical: 'red',
@@ -62,6 +63,8 @@ export function LowStock() {
   const toOrder = advised.filter((a) => a.advice.reorder);
   const alerting = advised.filter((a) => a.level === 'critical' || a.level === 'warning');
   const unmeasured = advised.filter((a) => a.row.daily_usage_g === null);
+  // Only filaments with real usage can be ranked by days of cover.
+  const measured = advised.filter((a) => a.row.days_remaining !== null);
 
   return (
     <div>
@@ -80,6 +83,24 @@ export function LowStock() {
         <Figure label="No usage data" value={String(unmeasured.length)}
                 hint="nothing consumed in 30 days" tone="muted" />
       </div>
+
+      {/* Days of cover is the number that decides what to buy, so it gets the
+          comparison rather than another row of figures. */}
+      {measured.length > 0 && (
+        <div className="mb-6">
+          <RankedBars
+            title="Days of stock left"
+            subtitle="From what each filament actually used over the last 30 days."
+            format={(v) => `${v.toFixed(1)} days`}
+            points={measured
+              .slice()
+              .sort((a, b) => Number(a.row.days_remaining) - Number(b.row.days_remaining))
+              .map((a) => ({
+                label: a.row.name, value: Number(a.row.days_remaining),
+              }))}
+          />
+        </div>
+      )}
 
       {loading && <NotEnoughData>Loading…</NotEnoughData>}
       {!loading && rows.length === 0 && (

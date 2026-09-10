@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-electron/
+dist-preview/
 release/
 .env
 .env.local

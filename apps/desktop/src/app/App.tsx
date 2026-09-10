@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { SessionProvider, useSession } from '@/app/SessionProvider';
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -38,6 +39,7 @@ import { Storage } from '@/pages/settings/Storage';
 import { NAVIGATION } from '@/app/navigation';
 import { WindowControls } from '@/components/WindowControls';
 import { Atmosphere } from '@/components/Atmosphere';
+import { UserGuide, useFirstRun } from '@/components/UserGuide';
 
 function SetupRequired() {
   return (
@@ -102,12 +104,17 @@ const IMPLEMENTED = new Set([
 ]);
 
 function Shell() {
+  // Opens by itself the first time, and by the sidebar button after that.
+  const [firstRun, dismissFirstRun] = useFirstRun();
+  const [requested, setRequested] = useState(false);
+  const showGuide = firstRun || requested;
+
   return (
     <div className="relative flex h-full flex-col bg-ink-900">
       <TitleBar />
       <div className="relative flex min-h-0 flex-1">
         <Atmosphere />
-        <Sidebar />
+        <Sidebar onOpenGuide={() => setRequested(true)} />
         <main className="relative z-10 min-w-0 flex-1 overflow-y-auto p-6">
           <Routes>
             <Route path="/" element={<Dashboard />} />
@@ -197,6 +204,9 @@ function Shell() {
           </Routes>
         </main>
       </div>
+      {showGuide && (
+        <UserGuide onClose={() => { dismissFirstRun(); setRequested(false); }} />
+      )}
     </div>
   );
 }

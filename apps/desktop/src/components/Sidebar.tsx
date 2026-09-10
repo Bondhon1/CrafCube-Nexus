@@ -3,7 +3,7 @@ import { CURRENT_PHASE, NAVIGATION } from '@/app/navigation';
 import { useSession } from '@/app/SessionProvider';
 import { NAV_ICONS } from '@/components/icons';
 
-export function Sidebar() {
+export function Sidebar({ onOpenGuide }: { onOpenGuide: () => void }) {
   const { can } = useSession();
   const location = useLocation();
 
@@ -90,15 +90,27 @@ export function Sidebar() {
         );
       })}
 
+      <div className="mt-auto pt-6">
+        <button
+          onClick={onOpenGuide}
+          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs
+                     text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-mint"
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M2 3.5A1.5 1.5 0 0 1 3.5 2H7v12H3.5A1.5 1.5 0 0 1 2 12.5Z" />
+            <path d="M14 3.5A1.5 1.5 0 0 0 12.5 2H9v12h3.5a1.5 1.5 0 0 0 1.5-1.5Z" />
+          </svg>
+          User guide
+        </button>
+      </div>
+
       {/* Ambient system detail: low contrast, never competing with navigation. */}
-      <div className="mt-auto space-y-1 px-3 pt-6">
+      <div className="space-y-1 px-3 pt-4">
         <div className="flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-mint shadow-[0_0_8px_rgba(13,248,208,0.8)]" />
           <span className="text-[10px] tracking-[0.16em] text-slate-500">SYSTEM ONLINE</span>
         </div>
-        <p className="text-[10px] tracking-[0.16em] text-slate-700">
-          NEXUS CORE · PHASE {CURRENT_PHASE}
-        </p>
       </div>
     </nav>
   );

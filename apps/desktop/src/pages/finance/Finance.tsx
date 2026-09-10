@@ -9,9 +9,15 @@ import {
   Badge, EmptyRow, ErrorNote, Field, Modal, Money,
   PageHeader, Panel, Row, Table, Td, Th,
 } from '@/components/ui';
+import { LineChart, StackedBarChart } from '@/components/charts';
 
 interface TxnRow extends FinanceTransaction {
   category: Pick<FinanceCategory, 'name' | 'is_cogs'> | null;
+}
+
+/** "Sep", for a month key like 2026-09-01. */
+function monthShort(month: string): string {
+  return new Date(month).toLocaleDateString(undefined, { month: 'short' });
 }
 
 /** Which rows each Finance screen shows. */
@@ -78,6 +84,14 @@ export function Finance({
     setSeeding(false);
   }
 
+  // The table reads newest first; charts read oldest first.
+  const chartMonths = useMemo(() => pnl.slice().reverse(), [pnl]);
+  const asMoney = useCallback(
+    (value: number) => `${currency} ${value.toLocaleString(undefined,
+      { maximumFractionDigits: 0 })}`,
+    [currency],
+  );
+
   const totals = useMemo(() => {
     const current = pnl[0];
     return {
@@ -125,6 +139,35 @@ export function Finance({
                     percent={marginPercent(totals.gross, totals.revenue)} />
             <Figure label="Net profit" value={totals.net} currency={currency}
                     percent={marginPercent(totals.net, totals.revenue)} accent />
+          </div>
+
+          {/* Oldest first: a trend reads left to right. */}
+          <div className="grid gap-4 xl:grid-cols-2">
+            <LineChart
+              title="Revenue and net profit"
+              subtitle="Same currency, so one axis carries both."
+              format={asMoney}
+              series={[
+                { name: 'Revenue', points: chartMonths.map((m) => ({
+                  label: monthShort(m.month),
+                  value: m.revenue === null ? null : Number(m.revenue),
+                })) },
+                { name: 'Net profit', points: chartMonths.map((m) => ({
+                  label: monthShort(m.month),
+                  value: m.net_profit === null ? null : Number(m.net_profit),
+                })) },
+              ]}
+            />
+            <StackedBarChart
+              title="What the money went on"
+              subtitle="Cost of goods sold sits below gross profit; operating expenses below that."
+              names={['Cost of goods sold', 'Operating expenses']}
+              format={asMoney}
+              points={chartMonths.map((m) => ({
+                label: monthShort(m.month),
+                parts: [Number(m.cogs ?? 0), Number(m.operating_expenses ?? 0)],
+              }))}
+            />
           </div>
 
           <Panel>

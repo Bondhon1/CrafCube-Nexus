@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build && electron-builder",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "preview:charts": "vite build --config vite.preview.config.ts"
   },
   "dependencies": {
     "@crafcube/types": "workspace:*",
