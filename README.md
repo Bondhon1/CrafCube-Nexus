@@ -3,7 +3,7 @@
 3D-print business management system — inventory, production, costing, pricing and finance.
 Full blueprint: [3D_Artifact_Business_Management_System_Design.md](3D_Artifact_Business_Management_System_Design.md).
 
-## Status — Phase 5: Sales & Finance
+## Status — all six phases shipped
 
 | Phase | Scope | State |
 |---|---|---|
@@ -12,7 +12,20 @@ Full blueprint: [3D_Artifact_Business_Management_System_Design.md](3D_Artifact_B
 | 3 | Costing and pricing engine | **done** |
 | 4 | Print jobs, queue, inventory consumption | **done** |
 | 5 | Sales, orders, payments, finance, P&L | **done** |
-| 6 | Analytics, calibration, forecasting | next |
+| 6 | Analytics, calibration, forecasting, reorder advice | **done** |
+
+## Phase notes
+
+Each phase records the decisions that are not obvious from the code — and the
+ones where the design doc was deliberately not followed.
+
+- [Phase 1 — Foundation](docs/phase-1-foundation.md)
+- [Phase 2 — Smart analyzer](docs/phase-2-analyzer.md)
+- [Phase 3 — Costing](docs/phase-3-costing.md)
+- [Phase 4 — Production](docs/phase-4-production.md)
+- [Phase 5 — Sales & finance](docs/phase-5-sales-finance.md)
+- [Phase 6 — Intelligence](docs/phase-6-intelligence.md)
+- [Storage backend](docs/storage-backend.md)
 
 ## Layout
 
