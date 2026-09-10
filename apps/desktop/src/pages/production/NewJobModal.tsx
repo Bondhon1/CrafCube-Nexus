@@ -246,6 +246,17 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
     if (!activeOrg || lanes.length === 0) return;
     setBusy(true);
     setError(null);
+
+    // Checked before anything is written: a job row with no material rows has
+    // an estimate of 0 and silently no-ops every stock movement, so it must
+    // never be created in the first place.
+    const usable = lanes.filter((l) => l.spoolId && l.grams > 0);
+    if (usable.length === 0) {
+      setError('Assign a spool to at least one colour before queuing the job.');
+      setBusy(false);
+      return;
+    }
+
     try {
       const { data: code, error: codeErr } = await supabase.rpc('next_job_code', {
         p_org: activeOrg.id,
@@ -267,19 +278,18 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
         .single();
       if (jobErr) throw new Error(jobErr.message);
 
-      const usable = lanes.filter((l) => l.spoolId && l.grams > 0);
-      if (usable.length > 0) {
-        const { error: matErr } = await supabase.from('print_job_materials').insert(
-          usable.map((l, i) => ({
-            organization_id: activeOrg.id,
-            job_id: (job as { id: string }).id,
-            spool_id: l.spoolId,
-            tool_index: i,
-            estimated_grams: l.grams * qty,
-          })),
-        );
-        if (matErr) throw new Error(matErr.message);
-      }
+      // The trigger on this table is what fills the job's own estimated_grams.
+      const { error: matErr } = await supabase.from('print_job_materials').insert(
+        usable.map((l, i) => ({
+          organization_id: activeOrg.id,
+          job_id: (job as { id: string }).id,
+          spool_id: l.spoolId,
+          tool_index: i,
+          estimated_grams: l.grams * qty,
+        })),
+      );
+      if (matErr) throw new Error(matErr.message);
+
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -483,15 +493,21 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
           </div>
         )}
         {unassigned > 0 && shortfalls.length === 0 && (
-          <p className="text-xs text-amber-300">
-            {unassigned} colour{unassigned > 1 ? 's have' : ' has'} no spool yet — those will not
-            reserve any material.
-          </p>
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3
+                          text-sm text-amber-300">
+            {unassigned} colour{unassigned > 1 ? 's have' : ' has'} no spool yet. A job with no
+            spool assigned reserves and consumes nothing, so its material never reaches the
+            ledger — pick a spool for every colour before queuing it.
+          </div>
         )}
 
         <div className="modal-actions">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
-          <button type="submit" disabled={busy || !model || lanes.length === 0}
+          {/* Unassigned colours are blocked, not warned about: a job that
+              cannot move stock is one the ledger can never account for. */}
+          <button type="submit"
+                  disabled={busy || !model || lanes.length === 0 || unassigned > 0
+                            || shortfalls.length > 0}
                   className="btn-primary">
             {busy ? 'Queuing…' : 'Queue job'}
           </button>
