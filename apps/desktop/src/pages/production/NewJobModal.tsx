@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from '@/app/SessionProvider';
 import { objectStore } from '@/lib/storage';
 import { Badge, ErrorNote, Field, Grams, Modal } from '@/components/ui';
+import { JobAdvisor } from '@/components/JobAdvisor';
 import { Visualizer, type ColorGroup } from '@/components/Visualizer';
 
 interface VersionWithFiles extends ModelVersion {
@@ -461,6 +462,17 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
               </div>
             </div>
           </div>
+        )}
+
+        {model && estimate && (
+          <JobAdvisor
+            modelId={model.id}
+            printerId={printerId || null}
+            quantity={qty}
+            unitSeconds={estimate.seconds}
+            unitGrams={lanes.reduce((sum, l) => sum + l.grams, 0)}
+            maxPerPlate={10}
+          />
         )}
 
         {shortfalls.length > 0 && (
