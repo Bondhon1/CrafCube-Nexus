@@ -64,6 +64,7 @@ export function Filaments() {
                 onClick={() => setCreating(true)}
                 disabled={noMaterials}
                 title={noMaterials ? 'Seed or add a material first' : undefined}
+                data-tour="filament-new"
                 className="btn-primary"
               >
                 New filament

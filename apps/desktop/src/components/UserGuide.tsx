@@ -1,20 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GUIDE, type GuideBlock } from '@/components/guide-content';
-import { LogoMark } from '@/components/Logo';
+import { TOUR } from '@/components/tour';
 
 /**
- * Per-workspace, so someone who joins a second organisation is not shown the
- * guide again as if they were new. Bumping the version reopens it for everyone,
- * which is the point when the guide has changed materially.
+ * Bumping the version reopens the tour for everyone, which is the point when
+ * the tour has changed materially.
  */
-const SEEN_KEY = 'nexus.guide.seen.v1';
+const SEEN_KEY = 'nexus.tour.seen.v1';
 
-function hasSeenGuide(): boolean {
+function hasSeenTour(): boolean {
   try {
     return localStorage.getItem(SEEN_KEY) === 'yes';
   } catch {
-    // Private windows and locked-down profiles throw here. Showing the guide
+    // Private windows and locked-down profiles throw here. Showing the tour
     // again is a far smaller failure than crashing the app on load.
     return false;
   }
@@ -24,180 +22,195 @@ function rememberSeen(): void {
   try {
     localStorage.setItem(SEEN_KEY, 'yes');
   } catch {
-    /* nothing to do; the guide simply opens again next time */
+    /* nothing to do; it simply offers itself again next time */
   }
 }
 
 /** True the first time this install reaches the workspace. */
 export function useFirstRun(): [boolean, () => void] {
   const [open, setOpen] = useState(false);
-
   useEffect(() => {
-    if (!hasSeenGuide()) setOpen(true);
+    if (!hasSeenTour()) setOpen(true);
   }, []);
-
   return [open, useCallback(() => setOpen(false), [])];
 }
 
-function Block({ block }: { block: GuideBlock }) {
-  switch (block.kind) {
-    case 'text':
-      return <p className="text-sm leading-relaxed text-slate-400">{block.text}</p>;
+interface Rect { top: number; left: number; width: number; height: number }
 
-    case 'rule':
-      return (
-        <div className="rounded-lg border border-mint/25 bg-mint/[0.06] px-4 py-3">
-          <p className="text-sm leading-relaxed text-mint/90">{block.text}</p>
-        </div>
-      );
+const PADDING = 8;
+const CALLOUT_WIDTH = 320;
+const GAP = 14;
 
-    case 'steps':
-      return (
-        <ol className="space-y-2.5">
-          {block.items.map((item, i) => (
-            <li key={item} className="flex gap-3">
-              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center
-                               rounded-full border border-mint/30 text-[11px] font-medium text-mint">
-                {i + 1}
-              </span>
-              <span className="text-sm leading-relaxed text-slate-400">{item}</span>
-            </li>
-          ))}
-        </ol>
-      );
+/**
+ * Waits for the step's element to exist, then reports where it is.
+ *
+ * The element usually appears a frame or two after the route changes, and
+ * sometimes after a fetch resolves, so this polls briefly rather than reading
+ * the DOM once and giving up.
+ */
+function useTargetRect(target: string | undefined, step: number): Rect | null {
+  const [rect, setRect] = useState<Rect | null>(null);
+  const frame = useRef<number>();
 
-    case 'points':
-      return (
-        <dl className="space-y-2.5">
-          {block.items.map((item) => (
-            <div key={item.term} className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
-              <dt className="shrink-0 text-sm font-medium text-slate-200 sm:w-40">
-                {item.term}
-              </dt>
-              <dd className="text-sm leading-relaxed text-slate-400">{item.detail}</dd>
-            </div>
-          ))}
-        </dl>
-      );
+  useLayoutEffect(() => {
+    setRect(null);
+    if (!target) return;
+
+    const deadline = Date.now() + 2500;
+
+    const measure = () => {
+      const el = document.querySelector<HTMLElement>(`[data-tour="${target}"]`);
+      if (el) {
+        // Bring it into view before measuring, or the spotlight lands on a
+        // rectangle that is scrolled off screen.
+        el.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+        const box = el.getBoundingClientRect();
+        setRect({
+          top: box.top - PADDING, left: box.left - PADDING,
+          width: box.width + PADDING * 2, height: box.height + PADDING * 2,
+        });
+        return;
+      }
+      if (Date.now() < deadline) frame.current = requestAnimationFrame(measure);
+    };
+
+    frame.current = requestAnimationFrame(measure);
+    return () => { if (frame.current) cancelAnimationFrame(frame.current); };
+  }, [target, step]);
+
+  return rect;
+}
+
+/** Where the callout sits so it never covers what it is pointing at. */
+function place(rect: Rect | null): React.CSSProperties {
+  if (!rect) {
+    return { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' };
   }
+
+  const below = rect.top + rect.height + GAP;
+  const roomBelow = window.innerHeight - below > 190;
+  const roomRight = window.innerWidth - (rect.left + rect.width) > CALLOUT_WIDTH + GAP * 2;
+
+  // Prefer beside a tall target (the sidebar), below a wide one (a button).
+  if (rect.height > 240 && roomRight) {
+    return {
+      left: Math.min(rect.left + rect.width + GAP, window.innerWidth - CALLOUT_WIDTH - GAP),
+      top: Math.min(Math.max(rect.top, GAP), window.innerHeight - 220),
+    };
+  }
+
+  const left = Math.min(
+    Math.max(rect.left + rect.width / 2 - CALLOUT_WIDTH / 2, GAP),
+    window.innerWidth - CALLOUT_WIDTH - GAP,
+  );
+  return roomBelow
+    ? { left, top: below }
+    : { left, top: Math.max(rect.top - GAP - 178, GAP) };
 }
 
 export function UserGuide({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [index, setIndex] = useState(0);
-  const step = GUIDE[index];
-  const last = index === GUIDE.length - 1;
+  const stop = TOUR[index];
+  const last = index === TOUR.length - 1;
+  const rect = useTargetRect(stop.target, index);
+
+  // Each stop drives the router: the tour walks the app rather than describing it.
+  useEffect(() => { navigate(stop.route); }, [navigate, stop.route]);
 
   const finish = useCallback(() => {
     rememberSeen();
     onClose();
   }, [onClose]);
 
+  const go = useCallback((delta: number) => {
+    setIndex((i) => Math.min(Math.max(i + delta, 0), TOUR.length - 1));
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') finish();
-      if (event.key === 'ArrowRight') setIndex((i) => Math.min(i + 1, GUIDE.length - 1));
-      if (event.key === 'ArrowLeft') setIndex((i) => Math.max(i - 1, 0));
+      if (event.key === 'ArrowRight') go(1);
+      if (event.key === 'ArrowLeft') go(-1);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [finish]);
-
-  function goTo(route: string) {
-    finish();
-    navigate(route);
-  }
+  }, [finish, go]);
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-6 backdrop-blur-sm"
-         role="dialog" aria-modal="true" aria-label="User guide">
-      <div className="card flex max-h-[86vh] w-[min(880px,94vw)] flex-col overflow-hidden p-0">
-        <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-4">
-          <div className="flex items-center gap-3">
-            <LogoMark className="h-7 w-7" />
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
-                User guide
-              </p>
-              <p className="text-sm font-semibold text-slate-100">
-                {index + 1} of {GUIDE.length} · {step.title}
-              </p>
-            </div>
-          </div>
-          <button onClick={finish} aria-label="Close the guide"
-                  className="rounded p-1 text-slate-500 transition-colors hover:bg-white/5
-                             hover:text-slate-200">
-            <svg width="14" height="14" viewBox="0 0 14 14" stroke="currentColor" strokeWidth="1.5">
-              <line x1="2" y1="2" x2="12" y2="12" />
-              <line x1="12" y1="2" x2="2" y2="12" />
-            </svg>
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true"
+         aria-label={`Guided tour, step ${index + 1} of ${TOUR.length}`}>
+      {/* Four panels rather than one dark sheet with a hole: the cut-out stays
+          crisp, and the highlighted control keeps its real colours. */}
+      {rect ? (
+        <>
+          <Shade style={{ left: 0, top: 0, width: '100%', height: Math.max(rect.top, 0) }} />
+          <Shade style={{ left: 0, top: rect.top, width: Math.max(rect.left, 0),
+                          height: rect.height }} />
+          <Shade style={{ left: rect.left + rect.width, top: rect.top,
+                          width: '100%', height: rect.height }} />
+          <Shade style={{ left: 0, top: rect.top + rect.height,
+                          width: '100%', height: '100%' }} />
+          <div
+            className="pointer-events-none absolute rounded-lg ring-2 ring-mint
+                       transition-all duration-300"
+            style={{
+              left: rect.left, top: rect.top, width: rect.width, height: rect.height,
+              boxShadow: '0 0 0 1px rgba(13,248,208,0.35), 0 0 28px -4px rgba(13,248,208,0.55)',
+            }}
+          />
+        </>
+      ) : (
+        <Shade style={{ inset: 0 }} />
+      )}
+
+      <div
+        className="absolute w-[320px] rounded-xl border border-mint/25 bg-ink-950/95 p-4
+                   shadow-panel backdrop-blur-sm transition-all duration-300"
+        style={place(rect)}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-mint">
+            {index + 1} / {TOUR.length}
+          </span>
+          <button onClick={finish} className="text-[11px] text-slate-500 hover:text-slate-300">
+            Skip
           </button>
         </div>
 
-        <div className="flex min-h-0 flex-1">
-          {/* Contents: the guide is navigated, not just paged through. */}
-          <nav className="hidden w-56 shrink-0 overflow-y-auto border-r border-line py-3 md:block">
-            <ul>
-              {GUIDE.map((entry, i) => (
-                <li key={entry.id}>
-                  <button
-                    onClick={() => setIndex(i)}
-                    aria-current={i === index ? 'step' : undefined}
-                    className={`flex w-full items-center gap-2.5 px-4 py-2 text-left text-xs
-                                transition-colors ${
-                      i === index
-                        ? 'bg-mint/[0.07] text-mint'
-                        : 'text-slate-500 hover:bg-white/[0.03] hover:text-slate-300'
-                    }`}
-                  >
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                      i === index ? 'bg-mint' : i < index ? 'bg-slate-600' : 'bg-line-bright'
-                    }`} />
-                    <span className="truncate">{entry.title}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
+        <h2 className="mt-2 text-sm font-semibold text-slate-100">{stop.title}</h2>
+        <p className="mt-1.5 text-xs leading-relaxed text-slate-400">{stop.text}</p>
 
-          <div className="min-w-0 flex-1 overflow-y-auto px-6 py-5">
-            <h2 className="text-lg font-semibold text-slate-100">{step.title}</h2>
-            <p className="mt-1 text-sm text-slate-500">{step.summary}</p>
+        {stop.target && !rect && (
+          <p className="mt-2 text-[11px] text-slate-600">
+            That control is not on screen — it may need a permission you do not have.
+          </p>
+        )}
 
-            <div className="mt-5 space-y-4">
-              {step.body.map((block, i) => <Block key={i} block={block} />)}
-            </div>
-
-            {step.route && (
-              <button onClick={() => goTo(step.route as string)}
-                      className="btn-ghost mt-6 text-xs">
-                {step.routeLabel ?? 'Open'} →
-              </button>
-            )}
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <div className="flex gap-1" aria-hidden="true">
+            {TOUR.map((entry, i) => (
+              <span key={entry.id} className={`h-1 rounded-full transition-all ${
+                i === index ? 'w-4 bg-mint' : 'w-1 bg-line-bright'}`} />
+            ))}
           </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 border-t border-line px-6 py-3">
-          <button onClick={finish} className="text-xs text-slate-500 hover:text-slate-300">
-            {last ? 'Close' : 'Skip the guide'}
-          </button>
-
-          <div className="flex items-center gap-2">
-            <button onClick={() => setIndex((i) => Math.max(i - 1, 0))}
-                    disabled={index === 0} className="btn-ghost text-xs disabled:opacity-30">
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => go(-1)} disabled={index === 0}
+                    className="btn-ghost px-2.5 py-1 text-xs disabled:opacity-30">
               Back
             </button>
-            {last ? (
-              <button onClick={finish} className="btn-primary text-xs">Get started</button>
-            ) : (
-              <button onClick={() => setIndex((i) => Math.min(i + 1, GUIDE.length - 1))}
-                      className="btn-primary text-xs">
-                Next
-              </button>
-            )}
+            <button onClick={() => (last ? finish() : go(1))}
+                    className="btn-primary px-3 py-1 text-xs">
+              {last ? 'Done' : 'Next'}
+            </button>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+/** One panel of the dimmed surround. Clicks are swallowed, not passed through. */
+function Shade({ style }: { style: React.CSSProperties }) {
+  return <div className="absolute bg-black/65 transition-all duration-300" style={style} />;
 }

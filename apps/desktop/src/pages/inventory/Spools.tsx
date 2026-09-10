@@ -73,6 +73,7 @@ export function Spools() {
             {canEdit && (
               <button onClick={() => setCreating(true)} disabled={products.length === 0}
                       title={products.length === 0 ? 'Create a filament first' : undefined}
+                      data-tour="spool-new"
                       className="btn-primary">
                 New spool
               </button>

@@ -54,7 +54,8 @@ export function CostProfiles() {
                 {seeding ? 'Seeding…' : 'Seed defaults'}
               </button>
             )}
-            <button onClick={() => setEditing('new')} className="btn-primary">New profile</button>
+            <button onClick={() => setEditing('new')} data-tour="cost-profile-new"
+                    className="btn-primary">New profile</button>
           </>
         )}
       />

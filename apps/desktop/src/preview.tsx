@@ -1,20 +1,20 @@
 /**
- * Visual test harness for the chart kit and the user guide.
+ * Visual test harness for the chart kit.
  *
  * The real screens need a signed-in session, so this is the only way to look at
  * a chart before shipping it — which the charts needed: it caught y-axis labels
  * overflowing their gutter and an axis topping out at nearly double the data.
  *
  *   pnpm --filter desktop preview:charts
- *   then open apps/desktop/dist-preview/preview.html (add ?view=guide for the guide)
+ *   then open apps/desktop/dist-preview/preview.html
  */
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
+import { UserGuide } from '@/components/UserGuide';
 import '@/styles/index.css';
 import {
   ACCENT, BarChart, LineChart, RankedBars, SERIES, StackedBarChart, Sparkline,
 } from '@/components/charts';
-import { UserGuide } from '@/components/UserGuide';
 
 const MONTHS = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
 const rev = [4200, 5100, 3800, 6400, 7100, 5900, 8200, 9400, 8800, 11200, 10400, 12600];
@@ -76,9 +76,54 @@ function App() {
   );
 }
 
+/**
+ * A stand-in shell carrying the same data-tour anchors as the real screens, so
+ * the tour's spotlight geometry and callout placement can be looked at without
+ * a signed-in session. The routes are inert here; the positioning is not.
+ */
+function TourHarness() {
+  return (
+    <MemoryRouter>
+      <div className="flex h-screen bg-ink-900">
+        <nav data-tour="nav"
+             className="flex w-60 shrink-0 flex-col gap-1 border-r border-line
+                        bg-ink-950/40 p-3">
+          {['Dashboard', 'Production', 'Models', 'Inventory', 'Printers', 'Sales',
+            'Finance', 'Analytics', 'Settings'].map((item) => (
+            <span key={item} className="rounded-lg px-3 py-2 text-sm text-slate-400">{item}</span>
+          ))}
+          <div className="mt-auto">
+            <button data-tour="guide-button"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs
+                               text-slate-400">
+              User guide
+            </button>
+          </div>
+        </nav>
+        <main className="flex-1 p-6">
+          <div className="mb-6 flex items-start justify-between">
+            <div>
+              <h1 className="text-xl font-semibold text-slate-100">Spools</h1>
+              <p className="mt-1 text-sm text-slate-400">Every physical reel you own.</p>
+            </div>
+            <button data-tour="spool-new" className="btn-primary">New spool</button>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3" data-tour="lowstock-summary">
+            {['Below threshold', 'Reorder advised', 'No usage data'].map((label) => (
+              <div key={label} className="card">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">{label}</p>
+                <p className="mt-2 text-xl font-semibold text-slate-100">2</p>
+              </div>
+            ))}
+          </div>
+        </main>
+      </div>
+      <UserGuide onClose={() => {}} />
+    </MemoryRouter>
+  );
+}
+
 const mode = new URLSearchParams(location.search).get('view');
 createRoot(document.getElementById('root')!).render(
-  mode === 'guide'
-    ? <MemoryRouter><div className="min-h-screen bg-ink-900"><UserGuide onClose={() => {}} /></div></MemoryRouter>
-    : <App />,
+  mode === 'tour' ? <TourHarness /> : <App />,
 );

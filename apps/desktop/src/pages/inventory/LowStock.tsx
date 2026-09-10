@@ -75,7 +75,7 @@ export function LowStock() {
 
       <ErrorNote message={error} />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-3" data-tour="lowstock-summary">
         <Figure label="Below threshold" value={String(alerting.length)}
                 tone={alerting.length > 0 ? 'warn' : 'muted'} />
         <Figure label="Reorder advised" value={String(toOrder.length)}

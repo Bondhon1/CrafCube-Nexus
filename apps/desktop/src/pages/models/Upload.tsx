@@ -297,6 +297,7 @@ export function Upload() {
             if (dropped) void accept(dropped);
           }}
           onClick={() => inputRef.current?.click()}
+          data-tour="model-drop"
           className={`cursor-pointer rounded-xl border-2 border-dashed p-10 text-center transition-colors ${
             dragging ? 'border-mint bg-mint/5' : 'border-line hover:border-mint/40'
           }`}

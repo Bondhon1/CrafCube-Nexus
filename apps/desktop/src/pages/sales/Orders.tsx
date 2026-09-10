@@ -70,7 +70,8 @@ export function Orders() {
         title="Orders"
         subtitle="Total is what the order is worth; paid is cash received. They are not the same number."
         actions={canSell && (
-          <button onClick={() => setCreating(true)} className="btn-primary">New order</button>
+          <button onClick={() => setCreating(true)} data-tour="order-new"
+                  className="btn-primary">New order</button>
         )}
       />
 

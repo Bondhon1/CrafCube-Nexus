@@ -119,6 +119,7 @@ export function Finance({
               <button
                 onClick={() => setCreating(view === 'revenue' ? 'income' : 'expense')}
                 disabled={categories.length === 0}
+                data-tour="finance-new"
                 className="btn-primary"
               >
                 {view === 'revenue' ? 'Record income' : 'Record expense'}

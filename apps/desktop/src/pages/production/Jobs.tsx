@@ -112,7 +112,8 @@ export function Jobs({
         title={title}
         subtitle={subtitle}
         actions={canRun && view === 'queue' && (
-          <button onClick={() => setCreating(true)} className="btn-primary">New job</button>
+          <button onClick={() => setCreating(true)} data-tour="job-new"
+                  className="btn-primary">New job</button>
         )}
       />
 

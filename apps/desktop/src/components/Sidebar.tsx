@@ -10,6 +10,7 @@ export function Sidebar({ onOpenGuide }: { onOpenGuide: () => void }) {
   return (
     <nav
       aria-label="Main"
+      data-tour="nav"
       className="relative z-10 flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto
                  border-r border-line bg-ink-950/40 p-3"
     >
@@ -93,6 +94,7 @@ export function Sidebar({ onOpenGuide }: { onOpenGuide: () => void }) {
       <div className="mt-auto pt-6">
         <button
           onClick={onOpenGuide}
+          data-tour="guide-button"
           className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs
                      text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-mint"
         >
