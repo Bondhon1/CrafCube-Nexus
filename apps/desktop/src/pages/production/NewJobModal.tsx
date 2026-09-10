@@ -158,6 +158,10 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
         layer_height_mm: 0.2,
         infill_percent: 15,
         nozzle_mm: 0.4,
+        // Fallback only — the machine profile states the real build volume.
+        bed_x_mm: bed.x,
+        bed_y_mm: bed.y,
+        bed_z_mm: bed.z,
       });
 
       if (response.status !== 'success' || !response.slice.gcode) {
@@ -165,6 +169,8 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
         return;
       }
 
+      const plates = response.slice.plate_count ?? 1;
+      const parts = response.slice.part_count ?? 1;
       const g = response.slice.gcode;
       const total = g.slicer_filament_grams ?? g.calculated_filament_grams ?? 0;
       const density = g.density_g_cm3 ?? 1.24;
@@ -175,7 +181,14 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
         grams: total,
         seconds: g.slicer_print_time_seconds ?? 0,
         confidence: response.confidence?.level ?? 'MEDIUM',
-        detail: response.confidence?.reason ?? 'Sliced',
+        detail: [
+          response.confidence?.reason ?? 'Sliced',
+          // A multi-object file gets re-laid out, and how many plates that
+          // took is part of what the operator is being quoted for (§20).
+          plates > 1
+            ? `${parts} parts across ${plates} plates — the time is their total.`
+            : parts > 1 ? `${parts} parts on one plate.` : '',
+        ].filter(Boolean).join(' '),
       });
 
       // Real per-tool weights replace the triangle-share guess. Existing spool

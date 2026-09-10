@@ -36,7 +36,7 @@ from app.slicer.profiles import available_printers
 from app.slicer.runner import slice_model
 from app.three_mf.reader import inspect_3mf
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 # Formats trimesh can read that are meaningful for printing.
 SUPPORTED_MESH_SUFFIXES = {".stl", ".3mf", ".obj", ".ply", ".off", ".glb", ".gltf"}
@@ -255,6 +255,11 @@ async def slice_endpoint(
     printer: str = Form("Kobra X"),
     vendor: str = Form("Anycubic"),
     material: str = Form("PLA"),
+    # Only a fallback: the machine profile states the real build volume, and
+    # these are used when it does not.
+    bed_x_mm: float = Form(256.0),
+    bed_y_mm: float = Form(256.0),
+    bed_z_mm: float = Form(256.0),
 ) -> dict[str, Any]:
     """Level B: a real slice, the primary costing source (§4).
 
@@ -274,6 +279,9 @@ async def slice_endpoint(
             printer=printer,
             vendor=vendor,
             material=material,
+            bed_x_mm=bed_x_mm,
+            bed_y_mm=bed_y_mm,
+            bed_z_mm=bed_z_mm,
         )
     finally:
         path.unlink(missing_ok=True)

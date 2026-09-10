@@ -63,6 +63,9 @@ interface SliceResponse {
     slicer_name: string | null;
     duration_seconds: number;
     error: string | null;
+    /** Plates the parts needed, and how many parts were laid out (§20). */
+    plate_count?: number;
+    part_count?: number;
     gcode: {
       slicer_filament_grams: number | null;
       calculated_filament_grams: number | null;
