@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, screen, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -57,6 +57,13 @@ function createWindow() {
       sandbox: true,
     },
   });
+
+  // Also set explicitly: the constructor option covers the small icon, and
+  // this makes sure the large one the taskbar prefers is the same image.
+  if (windowIcon) {
+    const image = nativeImage.createFromPath(windowIcon);
+    if (!image.isEmpty()) window.setIcon(image);
+  }
 
   window.once('ready-to-show', () => window?.show());
 
@@ -200,10 +207,14 @@ ipcMain.handle('files:save-text', async (event, defaultName: string, text: strin
   return result.filePath;
 });
 
-// Windows groups taskbar buttons by this id and uses it to find the icon. The
-// default is derived from the executable, so without it a dev run shows up as
-// "Electron" and refuses to pin properly.
-if (process.platform === 'win32') app.setAppUserModelId('com.crafcube.nexus');
+// Windows groups taskbar buttons by this id, and looks the icon up from the
+// Start Menu shortcut registered against it. A dev run has no such shortcut,
+// so setting the id there makes the shell fall back to the executable's own
+// icon — Electron's atom — and ignore the window icon entirely. Packaged
+// installs do have the shortcut, and need this for grouping and pinning.
+if (process.platform === 'win32' && app.isPackaged) {
+  app.setAppUserModelId('com.crafcube.nexus');
+}
 
 app.whenReady().then(() => {
   createWindow();
