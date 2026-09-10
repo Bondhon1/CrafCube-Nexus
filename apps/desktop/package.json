@@ -37,6 +37,12 @@
   "build": {
     "appId": "com.crafcube.nexus",
     "productName": "CrafCube Nexus",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
     "directories": {
       "buildResources": "build",
       "output": "release"
@@ -61,5 +67,7 @@
     "nsis": {
       "shortcutName": "CrafCube Nexus"
     }
-  }
+  },
+  "description": "3D-print business management: inventory, production, costing and finance.",
+  "author": "CrafCube"
 }
