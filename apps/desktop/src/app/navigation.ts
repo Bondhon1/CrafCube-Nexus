@@ -49,8 +49,8 @@ export const NAVIGATION: NavSection[] = [
     children: [
       { label: 'Filaments', path: '/inventory/filaments', phase: 1 },
       { label: 'Spools', path: '/inventory/spools', phase: 1 },
-      { label: 'Consumables', path: '/inventory/consumables', phase: 6 },
-      { label: 'Low Stock', path: '/inventory/low-stock', phase: 6 },
+      { label: 'Consumables', path: '/inventory/consumables' },
+      { label: 'Low Stock', path: '/inventory/low-stock' },
       { label: 'Transactions', path: '/inventory/transactions', phase: 1 },
     ],
   },
@@ -61,9 +61,10 @@ export const NAVIGATION: NavSection[] = [
     capability: 'printers.read',
     children: [
       { label: 'Machines', path: '/printers/machines', phase: 1 },
-      { label: 'Status', path: '/printers/status', phase: 6 },
-      { label: 'Maintenance', path: '/printers/maintenance', phase: 6 },
+      { label: 'Status', path: '/printers/status' },
+      { label: 'Maintenance', path: '/printers/maintenance' },
       { label: 'Profiles', path: '/printers/profiles' },
+      { label: 'Calibration', path: '/printers/calibration', phase: 6 },
     ],
   },
   {
@@ -88,7 +89,7 @@ export const NAVIGATION: NavSection[] = [
       { label: 'Expenses', path: '/finance/expenses', phase: 5 },
       { label: 'Revenue', path: '/finance/revenue', phase: 5 },
       { label: 'P&L', path: '/finance/pnl', phase: 5 },
-      { label: 'Reports', path: '/finance/reports', phase: 6 },
+      { label: 'Reports', path: '/finance/reports' },
     ],
   },
   {
@@ -97,11 +98,11 @@ export const NAVIGATION: NavSection[] = [
     icon: 'analytics',
     capability: 'analytics.read',
     children: [
-      { label: 'Products', path: '/analytics/products', phase: 6 },
-      { label: 'Printers', path: '/analytics/printers', phase: 6 },
-      { label: 'Materials', path: '/analytics/materials', phase: 6 },
-      { label: 'Waste', path: '/analytics/waste', phase: 6 },
-      { label: 'Profitability', path: '/analytics/profitability', phase: 6 },
+      { label: 'Products', path: '/analytics/products' },
+      { label: 'Printers', path: '/analytics/printers' },
+      { label: 'Materials', path: '/analytics/materials' },
+      { label: 'Waste', path: '/analytics/waste' },
+      { label: 'Profitability', path: '/analytics/profitability' },
     ],
   },
   {
@@ -115,12 +116,12 @@ export const NAVIGATION: NavSection[] = [
       { label: 'Audit Log', path: '/settings/audit' },
       { label: 'Pricing', path: '/settings/pricing' },
       { label: 'Cost Profiles', path: '/settings/cost-profiles' },
-      { label: 'Slicer', path: '/settings/slicer', phase: 6 },
-      { label: 'Notifications', path: '/settings/notifications', phase: 6 },
-      { label: 'Storage', path: '/settings/storage', phase: 3 },
+      { label: 'Slicer', path: '/settings/slicer' },
+      { label: 'Notifications', path: '/settings/notifications' },
+      { label: 'Storage', path: '/settings/storage' },
     ],
   },
 ];
 
 /** Phases already shipped — anything above renders as "coming in phase N". */
-export const CURRENT_PHASE = 5;
+export const CURRENT_PHASE = 6;

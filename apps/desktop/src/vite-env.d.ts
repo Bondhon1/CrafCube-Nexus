@@ -109,12 +109,18 @@ interface NexusEngine {
   ): Promise<SliceResponse>;
 }
 
+interface NexusFiles {
+  /** Resolves to the chosen path, or null when the user cancels. */
+  saveText(defaultName: string, text: string): Promise<string | null>;
+}
+
 interface NexusBridge {
   platform: string;
   versions: { electron: string; node: string; chrome: string };
   ping: () => Promise<unknown>;
   storage: NexusStorage;
   engine: NexusEngine;
+  files: NexusFiles;
   window: NexusWindowControls;
 }
 

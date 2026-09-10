@@ -25,6 +25,16 @@ import { Orders } from '@/pages/sales/Orders';
 import { Products } from '@/pages/sales/Products';
 import { Quotations } from '@/pages/sales/Quotations';
 import { Finance } from '@/pages/finance/Finance';
+import { Reports } from '@/pages/finance/Reports';
+import { Analytics } from '@/pages/analytics/Analytics';
+import { LowStock } from '@/pages/inventory/LowStock';
+import { Consumables } from '@/pages/inventory/Consumables';
+import { Maintenance } from '@/pages/printers/Maintenance';
+import { Status } from '@/pages/printers/Status';
+import { Calibration } from '@/pages/printers/Calibration';
+import { Slicer } from '@/pages/settings/Slicer';
+import { Notifications } from '@/pages/settings/Notifications';
+import { Storage } from '@/pages/settings/Storage';
 import { NAVIGATION } from '@/app/navigation';
 import { WindowControls } from '@/components/WindowControls';
 import { Atmosphere } from '@/components/Atmosphere';
@@ -75,6 +85,20 @@ const IMPLEMENTED = new Set([
   '/finance/expenses',
   '/finance/revenue',
   '/finance/pnl',
+  '/finance/reports',
+  '/analytics/products',
+  '/analytics/printers',
+  '/analytics/materials',
+  '/analytics/waste',
+  '/analytics/profitability',
+  '/inventory/consumables',
+  '/inventory/low-stock',
+  '/printers/status',
+  '/printers/maintenance',
+  '/printers/calibration',
+  '/settings/slicer',
+  '/settings/notifications',
+  '/settings/storage',
 ]);
 
 function Shell() {
@@ -134,6 +158,35 @@ function Shell() {
             <Route path="/finance/pnl" element={
               <Finance view="pnl" title="Profit &amp; loss"
                        subtitle="Revenue less cost of goods sold, then less operating expenses, by month." />
+            } />
+            <Route path="/finance/reports" element={<Reports />} />
+            <Route path="/inventory/low-stock" element={<LowStock />} />
+            <Route path="/inventory/consumables" element={<Consumables />} />
+            <Route path="/printers/status" element={<Status />} />
+            <Route path="/printers/maintenance" element={<Maintenance />} />
+            <Route path="/printers/calibration" element={<Calibration />} />
+            <Route path="/settings/slicer" element={<Slicer />} />
+            <Route path="/settings/notifications" element={<Notifications />} />
+            <Route path="/settings/storage" element={<Storage />} />
+            <Route path="/analytics/products" element={
+              <Analytics view="products" title="Product analytics"
+                         subtitle="Which products earn, using the cost snapshotted on each sale." />
+            } />
+            <Route path="/analytics/printers" element={
+              <Analytics view="printers" title="Printer analytics"
+                         subtitle="Hours, output, failures and utilisation per machine." />
+            } />
+            <Route path="/analytics/materials" element={
+              <Analytics view="materials" title="Material analytics"
+                         subtitle="Stock against measured consumption, and how long it will last." />
+            } />
+            <Route path="/analytics/waste" element={
+              <Analytics view="waste" title="Waste &amp; failures"
+                         subtitle="Filament that never became a product, and the reasons prints failed." />
+            } />
+            <Route path="/analytics/profitability" element={
+              <Analytics view="profitability" title="Profitability"
+                         subtitle="Profit per machine hour and per gram — the two metrics §69 singles out." />
             } />
             {NAVIGATION.flatMap((s) => s.children ?? [])
               .filter((c) => !IMPLEMENTED.has(c.path))

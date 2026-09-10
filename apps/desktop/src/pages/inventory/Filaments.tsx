@@ -133,6 +133,8 @@ export function Filaments() {
                   {level === 'critical' && <Badge tone="red">Critical</Badge>}
                   {level === 'warning' && <Badge tone="amber">Low</Badge>}
                   {level === 'ok' && <Badge tone="mint">OK</Badge>}
+                  {/* No threshold is not the same as healthy — say which it is. */}
+                  {level === 'unknown' && <Badge>No threshold</Badge>}
                 </Td>
               </Row>
             );

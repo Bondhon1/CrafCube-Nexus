@@ -48,7 +48,12 @@ export function Dashboard() {
         spools: active.length,
         filamentGrams: active.reduce((sum, s) => sum + Number(s.remaining_grams), 0),
         stockValue: stockRows.reduce((sum, r) => sum + Number(r.stock_value), 0),
-        lowStock: stockRows.filter((r) => stockLevel(r) !== 'ok'),
+        // Only genuine breaches. A product with no threshold set reports
+        // 'unknown', which is not the same as being low.
+        lowStock: stockRows.filter((r) => {
+          const level = stockLevel(r);
+          return level === 'critical' || level === 'warning';
+        }),
       });
     })();
 

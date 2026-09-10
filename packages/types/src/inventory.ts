@@ -160,13 +160,24 @@ export interface FilamentStock {
   weighted_cost_per_gram: number | null;
 }
 
-export type StockLevel = 'critical' | 'warning' | 'ok';
+export type StockLevel = 'critical' | 'warning' | 'ok' | 'unknown';
 
-/** Thresholds are optional; a product without them never reports low (§11). */
-export function stockLevel(row: Pick<FilamentStock, 'remaining_grams' | 'warn_grams' | 'critical_grams'>): StockLevel {
+/**
+ * Where a balance sits against its own thresholds (§11).
+ *
+ * Thresholds are optional, and a product without any reports 'unknown' rather
+ * than 'ok': nobody has said what "enough" means for it, and calling that
+ * healthy is a claim the data does not support.
+ */
+export function stockLevel(row: {
+  remaining_grams: number | string;
+  warn_grams: number | string | null;
+  critical_grams: number | string | null;
+}): StockLevel {
   const remaining = Number(row.remaining_grams);
   if (row.critical_grams != null && remaining <= Number(row.critical_grams)) return 'critical';
   if (row.warn_grams != null && remaining <= Number(row.warn_grams)) return 'warning';
+  if (row.warn_grams == null && row.critical_grams == null) return 'unknown';
   return 'ok';
 }
 

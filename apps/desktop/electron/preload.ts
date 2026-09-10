@@ -36,6 +36,12 @@ contextBridge.exposeInMainWorld('nexus', {
     remove: (url: string) => ipcRenderer.invoke('storage:delete', url),
   },
 
+  /** Writes a generated file wherever the user picks; null if they cancel. */
+  files: {
+    saveText: (defaultName: string, text: string): Promise<string | null> =>
+      ipcRenderer.invoke('files:save-text', defaultName, text),
+  },
+
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),
     toggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),

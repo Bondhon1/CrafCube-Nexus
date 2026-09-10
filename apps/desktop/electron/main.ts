@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain, screen, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
+import fs from 'node:fs/promises';
 import { engineStatus, engineUpload, engineUploadBinary, startEngine, stopEngine } from './engine';
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
@@ -159,6 +160,25 @@ ipcMain.handle('storage:delete', async (_event, url: string) => {
     throw new Error(`delete failed (${response.status}): ${detail}`);
   }
   return true;
+});
+
+/**
+ * Save a generated report where the user chooses.
+ *
+ * Reports go through a real save dialog rather than a renderer-side blob
+ * download: a silent write into the downloads folder gives no chance to pick
+ * a destination, and the file is the point of the feature.
+ */
+ipcMain.handle('files:save-text', async (event, defaultName: string, text: string) => {
+  const parent = callerWindow(event);
+  const result = await dialog.showSaveDialog(parent ?? undefined as never, {
+    defaultPath: defaultName,
+    filters: [{ name: 'CSV', extensions: ['csv'] }, { name: 'All files', extensions: ['*'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  // A BOM so Excel opens UTF-8 CSV without mangling non-ASCII names.
+  await fs.writeFile(result.filePath, '﻿' + text, 'utf8');
+  return result.filePath;
 });
 
 app.whenReady().then(() => {
