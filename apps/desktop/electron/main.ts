@@ -1,12 +1,30 @@
 import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { engineStatus, engineUpload, engineUploadBinary, startEngine, stopEngine } from './engine';
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
 const PREFERRED_WIDTH = 1440;
 const PREFERRED_HEIGHT = 900;
+
+/**
+ * Taskbar and window icon.
+ *
+ * A packaged build gets its icon from the executable itself, but a dev run
+ * would otherwise show Electron's own logo in the taskbar — which is how the
+ * app ends up looking unbranded on the only machine anyone actually runs it
+ * on. `build/` sits next to dist-electron/ in both layouts.
+ */
+const ICON = path.join(__dirname, '..', 'build',
+                       process.platform === 'win32' ? 'icon.ico' : 'icon.png');
+
+// Packaged builds take the icon from the executable or bundle instead, and
+// build/ is not shipped inside the asar — so the file is genuinely absent
+// there. Electron ignores a bad path silently, which is exactly the kind of
+// quiet failure worth ruling out explicitly.
+const windowIcon = existsSync(ICON) ? ICON : undefined;
 
 let window: BrowserWindow | null = null;
 
@@ -21,6 +39,7 @@ function createWindow() {
   window = new BrowserWindow({
     width,
     height,
+    icon: windowIcon,
     center: true,
     minWidth: Math.min(1100, width),
     minHeight: Math.min(700, height),
@@ -180,6 +199,11 @@ ipcMain.handle('files:save-text', async (event, defaultName: string, text: strin
   await fs.writeFile(result.filePath, '﻿' + text, 'utf8');
   return result.filePath;
 });
+
+// Windows groups taskbar buttons by this id and uses it to find the icon. The
+// default is derived from the executable, so without it a dev run shows up as
+// "Electron" and refuses to pin properly.
+if (process.platform === 'win32') app.setAppUserModelId('com.crafcube.nexus');
 
 app.whenReady().then(() => {
   createWindow();
