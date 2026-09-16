@@ -47,12 +47,6 @@ interface GeometryAnalysis {
     required_rotation_deg: number | null;
     message: string;
   };
-  estimate: {
-    filament_grams: number;
-    basis: string;
-    confidence: string;
-    reason: string;
-  };
 }
 
 interface SliceResponse {

@@ -27,7 +27,6 @@ from app.geometry.analyzer import (
     MeshLoadError,
     analyze_mesh,
     check_bed_fit,
-    estimate_filament_grams,
     load_mesh,
 )
 from app.gcode.parser import confidence_from_agreement, parse_gcode
@@ -113,13 +112,14 @@ async def analyze(
     bed_x_mm: float = Form(260.0),
     bed_y_mm: float = Form(260.0),
     bed_z_mm: float = Form(260.0),
-    density_g_cm3: float = Form(1.24),
-    infill_percent: float = Form(15.0),
-    wall_count: int = Form(3),
-    layer_height_mm: float = Form(0.2),
-    nozzle_mm: float = Form(0.4),
 ) -> dict[str, Any]:
-    """Level A analysis: dimensions, volume, printability warnings, bed fit."""
+    """Level A analysis: dimensions, volume, printability warnings, bed fit.
+
+    Measurement only. Filament and time come from a real slice (level B) —
+    §4 forbids passing a geometry guess off as a costing figure, and the
+    guess was out by +32% and +49% on two of this shop's own models, so it
+    is no longer produced at all.
+    """
     path = _save_upload(file, SUPPORTED_MESH_SUFFIXES)
     try:
         mesh = load_mesh(str(path))
@@ -131,16 +131,6 @@ async def analyze(
     result = analyze_mesh(mesh)
     fit = check_bed_fit(result.dimensions, bed_x_mm, bed_y_mm, bed_z_mm)
 
-    grams = estimate_filament_grams(
-        volume_cm3=result.volume_cm3,
-        density_g_cm3=density_g_cm3,
-        infill_percent=infill_percent,
-        wall_count=wall_count,
-        layer_height_mm=layer_height_mm,
-        nozzle_mm=nozzle_mm,
-        surface_area_cm2=result.surface_area_cm2,
-    )
-
     return {
         "status": "success",
         "level": "A",
@@ -150,17 +140,6 @@ async def analyze(
             "fits_after_rotation": fit.fits_after_rotation,
             "required_rotation_deg": fit.required_rotation_deg,
             "message": fit.message,
-        },
-        "estimate": {
-            "filament_grams": grams,
-            "basis": "geometry",
-            # §4: a geometry estimate is never presented as a final figure.
-            "confidence": "LOW" if result.volume_is_reliable else "UNRELIABLE",
-            "reason": (
-                "Geometry-only estimate. Slice the model for a costing-grade figure."
-                if result.volume_is_reliable
-                else "Mesh is not watertight, so its volume cannot be trusted."
-            ),
         },
     }
 

@@ -16,7 +16,6 @@ from app.geometry.analyzer import (
     MeshLoadError,
     analyze_mesh,
     check_bed_fit,
-    estimate_filament_grams,
     load_mesh,
 )
 
@@ -120,24 +119,3 @@ class TestBedFit:
         # 400 mm tall exceeds Z, but it lies flat within the footprint.
         fit = check_bed_fit(Dimensions(50, 50, 400), 500.0, 200.0, 260.0)
         assert fit.fits_after_rotation
-
-
-class TestFilamentEstimate:
-    def test_hollow_shell_costs_far_less_than_solid(self):
-        solid = estimate_filament_grams(100.0, 1.24, infill_percent=100)
-        sparse = estimate_filament_grams(100.0, 1.24, infill_percent=15)
-        assert sparse < solid / 3
-
-    def test_full_infill_approaches_solid_mass(self):
-        # 100 cm3 of PLA at 1.24 g/cm3 is 124 g.
-        assert estimate_filament_grams(100.0, 1.24, infill_percent=100) == pytest.approx(124.0)
-
-    def test_shell_dominates_a_thin_walled_part(self):
-        # Large surface, small volume: the shell term should carry the estimate.
-        grams = estimate_filament_grams(
-            volume_cm3=10.0, density_g_cm3=1.24, infill_percent=0, surface_area_cm2=200.0
-        )
-        assert grams == pytest.approx(12.4, rel=1e-3)
-
-    def test_zero_volume_is_zero(self):
-        assert estimate_filament_grams(0.0, 1.24, 15) == 0.0

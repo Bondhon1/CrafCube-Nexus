@@ -247,38 +247,3 @@ def check_bed_fit(dims: Dimensions, bed_x: float, bed_y: float, bed_z: float) ->
     return BedFit(False, False, None, "Model exceeds the build volume: " + "; ".join(over) + ".")
 
 
-def estimate_filament_grams(
-    volume_cm3: float,
-    density_g_cm3: float,
-    infill_percent: float,
-    wall_count: int = 3,
-    layer_height_mm: float = 0.2,
-    nozzle_mm: float = 0.4,
-    surface_area_cm2: float | None = None,
-) -> float:
-    """Very rough material estimate from geometry alone.
-
-    A solid model is mostly shell plus sparse infill, so treating the whole
-    volume as solid overestimates badly. This splits the two: shell volume from
-    surface area times wall thickness, and the remainder at the infill ratio.
-
-    This exists to give an instant figure at upload time. §4 requires it be
-    labelled low confidence and replaced by the slicer's number before pricing.
-    """
-    if volume_cm3 <= 0 or density_g_cm3 <= 0:
-        return 0.0
-
-    infill_fraction = max(0.0, min(infill_percent, 100.0)) / 100.0
-
-    if surface_area_cm2 and surface_area_cm2 > 0:
-        wall_thickness_cm = (wall_count * nozzle_mm) / 10.0
-        shell_cm3 = min(surface_area_cm2 * wall_thickness_cm, volume_cm3)
-    else:
-        shell_cm3 = 0.0
-
-    interior_cm3 = max(volume_cm3 - shell_cm3, 0.0)
-    material_cm3 = shell_cm3 + interior_cm3 * infill_fraction
-
-    # Top and bottom solid layers are ignored here; the shell term absorbs most
-    # of that, and precision beyond this is the slicer's job.
-    return round(material_cm3 * density_g_cm3, 3)

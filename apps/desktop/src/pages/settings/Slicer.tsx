@@ -91,8 +91,8 @@ export function Slicer() {
           label="Slicing"
           value={canSlice ? 'Available' : 'Unavailable'}
           hint={canSlice
-            ? 'costing-grade estimates from real G-code'
-            : 'estimates fall back to geometry, which is less accurate'}
+            ? 'weight and time measured from real G-code'
+            : 'without it, jobs have no weight or time at all'}
           tone={canSlice ? 'good' : 'warn'}
         />
         <Figure label="Slicers found" value={String(slicers.length)} tone="muted" />

@@ -28,7 +28,6 @@ interface Lane {
 }
 
 interface Estimate {
-  basis: 'geometry' | 'slicer';
   grams: number;
   seconds: number;
   confidence: string;
@@ -117,36 +116,29 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
     return () => { cancelled = true; };
   }, [source]);
 
-  /** Geometry fallback: volume × density × a shell-plus-infill factor. */
-  const geometryGrams = version?.volume_cm3 ? Number(version.volume_cm3) * 1.24 * 0.35 : 0;
-
-  // Colour groups from the file become lanes, split by triangle share until a
-  // slice provides the real per-tool figures.
+  /**
+   * Colour groups from the file become lanes, with no weight until the slice
+   * says what it is.
+   *
+   * There used to be a geometry guess here — volume x density x 0.35 — shown
+   * while the operator decided. It read like a figure and was not one: on this
+   * shop's own models it came out +32% and +49% against the real slice, and a
+   * guess that looks like a measurement is worse than no number at all.
+   */
   const handleGroups = useCallback((detected: ColorGroup[]) => {
     setGroups(detected);
     setLanes((current) => {
       if (current.length === detected.length) return current;
       return detected.map((g, i) => ({
         toolIndex: i,
-        grams: Math.round(geometryGrams * g.share * 10) / 10,
+        grams: 0,
         spoolId: '',
         sourceColor: g.sourceColor,
       }));
     });
-    if (!estimate && geometryGrams > 0) {
-      setEstimate({
-        basis: 'geometry',
-        grams: Math.round(geometryGrams * 10) / 10,
-        seconds: 0,
-        confidence: 'LOW',
-        detail: detected.length > 1
-          ? `${detected.length} colours found in the file. Slice for real per-colour weights.`
-          : 'From stored geometry. Slice for a costing-grade figure.',
-      });
-    }
-  }, [geometryGrams, estimate]);
+  }, []);
 
-  async function runSlice() {
+  const runSlice = useCallback(async () => {
     const bridge = window.nexus?.engine;
     if (!bridge || !mesh || !source) return;
     setError(null);
@@ -177,7 +169,6 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
       const perTool = Object.entries(g.per_tool_filament_mm ?? {});
 
       setEstimate({
-        basis: 'slicer',
         grams: total,
         seconds: g.slicer_print_time_seconds ?? 0,
         confidence: response.confidence?.level ?? 'MEDIUM',
@@ -220,7 +211,23 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
     } finally {
       setSlicing(null);
     }
-  }
+  }, [mesh, source, printer, printerId, bed, groups]);
+
+  /**
+   * Slice as soon as there is something to slice, and again when the printer
+   * changes, because the machine profile decides the answer.
+   *
+   * There is no cheaper number to show in the meantime, so waiting for this is
+   * the whole interaction rather than an optional extra step.
+   */
+  useEffect(() => {
+    if (!mesh || !source) return;
+    void runSlice();
+    // runSlice is deliberately not a dependency: it changes whenever the colour
+    // groups do, and re-slicing because a slice reported its own colours would
+    // never settle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mesh, source, printerId]);
 
   const qty = Math.max(Number(quantity) || 1, 1);
 
@@ -377,25 +384,39 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
                   <p className="label mb-0">Estimate</p>
                   <button type="button" onClick={() => void runSlice()}
                           disabled={!mesh || slicing !== null}
+                          title="Runs again with the current printer and settings"
                           className="btn-ghost px-3 py-1.5 text-xs">
-                    {slicing ?? (estimate?.basis === 'slicer' ? 'Re-slice' : 'Slice')}
+                    {slicing ?? 'Re-slice'}
                   </button>
                 </div>
 
                 <div className="mt-3 flex items-baseline gap-5">
                   <div>
                     <p className="tabular text-xl font-semibold text-slate-100">
-                      <Grams value={totalGrams} />
+                      {estimate ? <Grams value={totalGrams} />
+                        : <span className="text-slate-600">—</span>}
                     </p>
                     <p className="text-[11px] text-slate-500">material</p>
                   </div>
                   <div>
                     <p className="tabular text-xl font-semibold text-slate-100">
-                      {formatDuration((estimate?.seconds ?? 0) * qty)}
+                      {estimate
+                        ? formatDuration(estimate.seconds * qty)
+                        : <span className="text-slate-600">—</span>}
                     </p>
                     <p className="text-[11px] text-slate-500">print time</p>
                   </div>
                 </div>
+
+                {!estimate && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    {slicing
+                      ? 'Slicing for the real weight and time…'
+                      : mesh
+                        ? 'No figure yet. Re-slice, or check the engine on Settings → Slicer.'
+                        : 'Choose a model to slice.'}
+                  </p>
+                )}
 
                 {estimate && (
                   <>
@@ -404,7 +425,7 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
                         estimate.confidence === 'HIGH' ? 'mint'
                           : estimate.confidence === 'LOW' ? 'amber' : 'slate'
                       }>
-                        {estimate.basis === 'slicer' ? 'Sliced' : 'Geometry'} · {estimate.confidence}
+                        Sliced · {estimate.confidence}
                       </Badge>
                     </div>
                     <p className="mt-2 break-words text-xs text-slate-500">{estimate.detail}</p>
@@ -519,8 +540,8 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
           {/* Unassigned colours are blocked, not warned about: a job that
               cannot move stock is one the ledger can never account for. */}
           <button type="submit"
-                  disabled={busy || !model || lanes.length === 0 || unassigned > 0
-                            || shortfalls.length > 0}
+                  disabled={busy || !model || lanes.length === 0 || !estimate
+                            || unassigned > 0 || shortfalls.length > 0}
                   className="btn-primary">
             {busy ? 'Queuing…' : 'Queue job'}
           </button>

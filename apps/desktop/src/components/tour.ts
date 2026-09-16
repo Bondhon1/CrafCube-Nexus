@@ -58,15 +58,15 @@ export const TOUR: TourStop[] = [
     target: 'model-drop',
     title: 'Drop a model here',
     text: 'STL or 3MF. The app measures it, renders a preview and finds how many '
-        + 'colours it uses. Slice it for a costing-grade estimate.',
+        + 'colours it uses. Weight and time come later, from slicing the job.',
   },
   {
     id: 'job',
     route: '/production/queue',
     target: 'job-new',
     title: 'Queue a print job',
-    text: 'Pick the model, the printer, and a spool for every colour. Without a '
-        + 'spool the job cannot be prepared — it would reserve nothing.',
+    text: 'Pick the model, the printer, and a spool for every colour. It slices '
+        + 'as you go: the weight and time you see are measured, never guessed.',
   },
   {
     id: 'order',

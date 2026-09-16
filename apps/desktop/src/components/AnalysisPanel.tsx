@@ -1,18 +1,15 @@
 import { Badge } from '@/components/ui';
 
 /**
- * Analysis result display (design doc §81, §82).
+ * Analysis result display (design doc §81).
  *
- * Confidence is shown next to every derived figure rather than buried, because
- * §4 is explicit that a geometry-only estimate must never read like a sliced
- * one. A number here is a hint for the operator, not a price.
+ * Measurement and printability only. This used to carry a "rough material
+ * estimate" from geometry alone; it read like a figure without being one, so
+ * filament and time now come from a real slice or not at all.
  */
 export function AnalysisPanel({ analysis }: { analysis: GeometryAnalysis }) {
-  const { geometry: g, bed_fit: fit, estimate } = analysis;
+  const { geometry: g, bed_fit: fit } = analysis;
   const d = g.dimensions;
-
-  const confidenceTone =
-    estimate.confidence === 'HIGH' ? 'mint' : estimate.confidence === 'LOW' ? 'amber' : 'red';
 
   return (
     <div className="card space-y-4">
@@ -42,19 +39,9 @@ export function AnalysisPanel({ analysis }: { analysis: GeometryAnalysis }) {
         {fit.message}
       </div>
 
-      <div className="rounded-lg border border-line bg-ink-950/50 px-4 py-3">
-        <div className="flex items-baseline justify-between">
-          <span className="text-sm text-slate-400">Rough material estimate</span>
-          <span className="text-lg font-medium text-slate-100">
-            {estimate.filament_grams.toLocaleString()}
-            <span className="ml-1 text-sm text-slate-500">g</span>
-          </span>
-        </div>
-        <div className="mt-2 flex items-center gap-2">
-          <Badge tone={confidenceTone}>{estimate.confidence} confidence</Badge>
-          <span className="text-xs text-slate-500">{estimate.reason}</span>
-        </div>
-      </div>
+      <p className="text-xs text-slate-500">
+        Weight and print time are measured by slicing, on the job that will print it.
+      </p>
 
       {(g.warnings.length > 0 || g.notes.length > 0) && (
         <ul className="space-y-1.5 text-sm">
