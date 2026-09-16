@@ -1,10 +1,14 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { CURRENT_PHASE, NAVIGATION } from '@/app/navigation';
+import { describeSetup, downloadPercent, useSlicerSetup } from '@/lib/slicerSetup';
 import { useSession } from '@/app/SessionProvider';
 import { NAV_ICONS } from '@/components/icons';
 
 export function Sidebar({ onOpenGuide }: { onOpenGuide: () => void }) {
   const { can } = useSession();
+  const setup = useSlicerSetup();
+  const setupLine = describeSetup(setup);
+  const percent = downloadPercent(setup);
   const location = useLocation();
 
   return (
@@ -92,6 +96,23 @@ export function Sidebar({ onOpenGuide }: { onOpenGuide: () => void }) {
       })}
 
       <div className="mt-auto pt-6">
+        {/* Quiet and only while it matters: once a slicer is ready there is
+            nothing to say, and costing simply works. */}
+        {setupLine && setup?.phase !== 'checking' && (
+          <Link to="/settings/slicer"
+                className="mb-2 block rounded-lg border border-line px-3 py-2 transition-colors
+                           hover:border-mint/30">
+            <p className={`text-[11px] ${setup?.phase === 'failed' ? 'text-amber-300' : 'text-slate-400'}`}>
+              {setupLine}
+            </p>
+            {percent !== null && (
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/5">
+                <div className="h-full rounded-full bg-mint transition-[width] duration-300"
+                     style={{ width: `${percent}%` }} />
+              </div>
+            )}
+          </Link>
+        )}
         <button
           onClick={onOpenGuide}
           data-tour="guide-button"

@@ -5,15 +5,17 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && electron-builder",
+    "build": "tsc --noEmit && vite build && python ../../scripts/build-engine.py && electron-builder",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "preview:charts": "vite build --config vite.preview.config.ts"
+    "preview:charts": "vite build --config vite.preview.config.ts",
+    "build:engine": "python ../../scripts/build-engine.py"
   },
   "dependencies": {
     "@crafcube/types": "workspace:*",
     "@supabase/supabase-js": "^2.47.10",
     "@types/three": "^0.185.4",
+    "extract-zip": "2.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
@@ -66,7 +68,16 @@
     },
     "nsis": {
       "shortcutName": "CrafCube Nexus"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "engine-bundle",
+        "to": "local-engine",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
   },
   "description": "3D-print business management: inventory, production, costing and finance.",
   "author": "CrafCube"

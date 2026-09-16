@@ -30,12 +30,12 @@ from app.geometry.analyzer import (
     load_mesh,
 )
 from app.gcode.parser import confidence_from_agreement, parse_gcode
-from app.slicer.discovery import find_slicers, preferred_slicer
+from app.slicer.discovery import find_slicers, has_own_slicer, preferred_slicer
 from app.slicer.profiles import available_printers
 from app.slicer.runner import slice_model
 from app.three_mf.reader import inspect_3mf
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 # Formats trimesh can read that are meaningful for printing.
 SUPPORTED_MESH_SUFFIXES = {".stl", ".3mf", ".obj", ".ply", ".off", ".glb", ".gltf"}
@@ -66,8 +66,9 @@ def status() -> dict[str, Any]:
 def capabilities() -> dict[str, Any]:
     """What this machine can actually do.
 
-    Reported honestly: with no slicer installed, Level B is unavailable and the
-    caller must treat filament figures as geometry estimates (§4).
+    With no slicer, jobs have no weight or time at all — estimates come only
+    from slicing. `has_own_slicer` tells the desktop app whether the user
+    already has one, which is what decides whether it downloads OrcaSlicer.
     """
     slicers = find_slicers()
     chosen = slicers[0] if slicers else None
@@ -79,6 +80,7 @@ def capabilities() -> dict[str, Any]:
         "three_mf": True,
         "slicing": bool(slicers),
         "slicers": [s.to_dict() for s in slicers],
+        "has_own_slicer": has_own_slicer(slicers),
         "printer_profiles": printers,
         "supported_mesh_formats": sorted(SUPPORTED_MESH_SUFFIXES),
         "analysis_levels": {

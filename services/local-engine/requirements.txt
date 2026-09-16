@@ -1,6 +1,18 @@
-fastapi>=0.115
-uvicorn[standard]>=0.32
-trimesh[easy]>=4.5
-numpy>=2.0
-scipy>=1.14
-python-multipart>=0.0.9
+# Runtime dependencies of the local engine — shipped inside the installer.
+#
+# Deliberately minimal. Estimates come only from slicing now, so the engine
+# needs to serve HTTP, read meshes, and parse G-code; nothing more. Dropping
+# trimesh[easy] and uvicorn[standard] removed scipy, embree, Pillow, shapely,
+# rtree and friends — about 250 MB the engine never imported.
+#
+# Each entry was verified by removing it and watching something break:
+#   lxml      trimesh's 3MF loader parses the model XML with it
+#   networkx  trimesh's 3MF loader builds the scene graph with it
+# Pinned, because these exact versions are what the bundle was tested with.
+fastapi==0.141.1
+uvicorn==0.52.4
+python-multipart==0.0.32
+trimesh==5.1.0
+numpy==2.5.3
+lxml==6.1.3
+networkx==3.6.1

@@ -1,15 +1,84 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PageHeader, Panel, Badge, ErrorNote } from '@/components/ui';
 import { Figure, NotEnoughData } from '@/components/analytics';
+import { downloadPercent, useSlicerSetup } from '@/lib/slicerSetup';
+
+const SOURCE_LABEL: Record<string, string> = {
+  installed: 'Installed',
+  configured: 'Configured',
+  downloaded: 'Downloaded by the app',
+  bundled: 'Development copy',
+};
+
+/** Where the one slicer the app actually uses came from, and the download if any. */
+function SetupCard({ setup, onRetry }: { setup: SlicerSetup | null; onRetry: () => void }) {
+  if (!setup) return null;
+  const percent = downloadPercent(setup);
+  const busy = setup.phase === 'checking' || setup.phase === 'downloading'
+    || setup.phase === 'verifying' || setup.phase === 'extracting';
+
+  const mb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(0);
+
+  return (
+    <div className="card mb-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-100">
+            {setup.phase === 'installed' && `Using your ${setup.name}`}
+            {setup.phase === 'ready' && `Using ${setup.name}`}
+            {setup.phase === 'checking' && 'Looking for a slicer on this computer…'}
+            {setup.phase === 'downloading' && 'Downloading OrcaSlicer'}
+            {setup.phase === 'verifying' && 'Verifying the download'}
+            {setup.phase === 'extracting' && 'Unpacking OrcaSlicer'}
+            {setup.phase === 'failed' && 'Slicer setup did not finish'}
+            {setup.phase === 'unsupported' && 'Install a slicer to enable costing'}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {setup.phase === 'installed'
+              && 'Found on this computer, so nothing was downloaded.'}
+            {setup.phase === 'ready'
+              && 'Every weight and print time in the app is measured by this slicer.'}
+            {setup.phase === 'checking'
+              && 'An OrcaSlicer or Anycubic Slicer Next you already have is always used first.'}
+            {setup.phase === 'downloading'
+              && `${mb(setup.received)} of ${mb(setup.total)} MB. The app stays usable while this `
+               + 'runs; if it is interrupted it resumes where it stopped.'}
+            {setup.phase === 'verifying'
+              && 'Checking the file against its published checksum before anything runs.'}
+            {setup.phase === 'extracting' && 'Almost done.'}
+            {setup.phase === 'failed' && setup.error}
+            {setup.phase === 'unsupported' && setup.reason}
+          </p>
+        </div>
+        {setup.phase === 'installed' && <Badge tone="mint">Your slicer</Badge>}
+        {setup.phase === 'ready' && <Badge tone="mint">Ready</Badge>}
+        {setup.phase === 'failed' && (
+          <button onClick={onRetry} className="btn-primary shrink-0">Retry</button>
+        )}
+      </div>
+
+      {busy && (
+        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/5">
+          <div
+            className={`h-full rounded-full bg-mint transition-[width] duration-300 ${
+              percent === null ? 'w-1/3 animate-pulse' : ''}`}
+            style={percent === null ? undefined : { width: `${percent}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * §41-§42: what the local engine found on this machine.
  *
- * Read-only on purpose. Slicer discovery walks the known install locations and
- * the bundled `tools/orca` directory; letting someone type a path here would
+ * Read-only on purpose. Discovery reads the registry, PATH and the usual
+ * folders, then the app's own download; letting someone type a path here would
  * produce a setting that silently disagrees with what actually runs.
  */
 export function Slicer() {
+  const setup = useSlicerSetup();
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -31,6 +100,9 @@ export function Slicer() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    if (setup?.phase === 'ready' || setup?.phase === 'installed') void refresh();
+  }, [setup?.phase, refresh]);
 
   async function start() {
     const bridge = window.nexus?.engine;
@@ -79,6 +151,8 @@ export function Slicer() {
 
       <ErrorNote message={error ?? status?.error ?? null} />
 
+      <SetupCard setup={setup} onRetry={() => void window.nexus?.slicer.retry()} />
+
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Figure
           label="Engine"
@@ -102,21 +176,26 @@ export function Slicer() {
         <h2 className="mb-3 text-sm font-semibold text-slate-200">Detected slicers</h2>
         {slicers.length === 0 ? (
           <NotEnoughData>
-            No slicer found. Install OrcaSlicer or Anycubic Slicer Next, or drop a portable
-            OrcaSlicer into <code className="font-mono text-mint">tools/orca</code> next to the
-            project — the engine looks there too.
+            None yet. If you install OrcaSlicer or Anycubic Slicer Next it will be found and
+            used instead of downloading one.
           </NotEnoughData>
         ) : (
           <div className="space-y-2">
-            {slicers.map((s) => (
+            {slicers.map((s, index) => (
               <div key={s.executable} className="card flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-slate-100">{s.name}</p>
-                  <p className="mt-1 break-all font-mono text-xs text-slate-500">
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {SOURCE_LABEL[s.source] ?? s.source}
+                  </p>
+                  <p className="mt-1 break-all font-mono text-xs text-slate-600">
                     {s.executable}
                   </p>
                 </div>
-                <Badge tone="mint">Ready</Badge>
+                {/* Only the first is used; the rest are fallbacks. */}
+                <Badge tone={index === 0 ? 'mint' : 'slate'}>
+                  {index === 0 ? 'In use' : 'Fallback'}
+                </Badge>
               </div>
             ))}
           </div>

@@ -36,6 +36,18 @@ contextBridge.exposeInMainWorld('nexus', {
     remove: (url: string) => ipcRenderer.invoke('storage:delete', url),
   },
 
+  /** Whether a slicer is available, and the background download if not. */
+  slicer: {
+    status: () => ipcRenderer.invoke('slicer:status'),
+    retry: () => ipcRenderer.invoke('slicer:retry'),
+    /** Fires on every change of setup state. Returns an unsubscribe. */
+    onState: (handler: (state: unknown) => void) => {
+      const listener = (_event: unknown, state: unknown) => handler(state);
+      ipcRenderer.on('slicer:state', listener);
+      return () => ipcRenderer.removeListener('slicer:state', listener);
+    },
+  },
+
   /** Writes a generated file wherever the user picks; null if they cancel. */
   files: {
     saveText: (defaultName: string, text: string): Promise<string | null> =>

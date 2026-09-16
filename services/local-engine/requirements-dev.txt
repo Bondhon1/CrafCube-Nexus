@@ -1,0 +1,3 @@
+# Test-only. Never bundled.
+-r requirements.txt
+pytest

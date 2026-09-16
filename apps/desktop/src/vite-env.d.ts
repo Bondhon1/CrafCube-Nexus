@@ -79,7 +79,8 @@ interface EngineStatus {
   error: string | null;
   capabilities: {
     slicing: boolean;
-    slicers: { name: string; executable: string }[];
+    slicers: { name: string; executable: string; source: string }[];
+    has_own_slicer?: boolean;
     analysis_levels: Record<string, string>;
   } | null;
 }
@@ -106,6 +107,22 @@ interface NexusEngine {
   ): Promise<SliceResponse>;
 }
 
+type SlicerSetup =
+  | { phase: 'checking' }
+  | { phase: 'installed'; name: string }
+  | { phase: 'ready'; name: string }
+  | { phase: 'downloading'; received: number; total: number }
+  | { phase: 'verifying' }
+  | { phase: 'extracting' }
+  | { phase: 'failed'; error: string }
+  | { phase: 'unsupported'; reason: string };
+
+interface NexusSlicer {
+  status(): Promise<SlicerSetup>;
+  retry(): Promise<SlicerSetup>;
+  onState(handler: (state: SlicerSetup) => void): () => void;
+}
+
 interface NexusFiles {
   /** Resolves to the chosen path, or null when the user cancels. */
   saveText(defaultName: string, text: string): Promise<string | null>;
@@ -118,6 +135,7 @@ interface NexusBridge {
   storage: NexusStorage;
   engine: NexusEngine;
   files: NexusFiles;
+  slicer: NexusSlicer;
   window: NexusWindowControls;
 }
 

@@ -7,6 +7,7 @@ import { objectStore } from '@/lib/storage';
 import { Badge, ErrorNote, Field, Grams, Modal } from '@/components/ui';
 import { JobAdvisor } from '@/components/JobAdvisor';
 import { Visualizer, type ColorGroup } from '@/components/Visualizer';
+import { describeSetup, useSlicerSetup } from '@/lib/slicerSetup';
 
 interface VersionWithFiles extends ModelVersion {
   files: ModelFile[];
@@ -41,6 +42,8 @@ function lengthToGrams(mm: number, diameterMm: number, density: number): number 
 
 export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const { activeOrg } = useSession();
+  const setup = useSlicerSetup();
+  const setupReady = setup === null || setup.phase === 'ready' || setup.phase === 'installed';
 
   const [models, setModels] = useState<ModelWithVersions[]>([]);
   const [printers, setPrinters] = useState<Printer[]>([]);
@@ -221,13 +224,13 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
    * the whole interaction rather than an optional extra step.
    */
   useEffect(() => {
-    if (!mesh || !source) return;
+    if (!mesh || !source || !setupReady) return;
     void runSlice();
     // runSlice is deliberately not a dependency: it changes whenever the colour
     // groups do, and re-slicing because a slice reported its own colours would
     // never settle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mesh, source, printerId]);
+  }, [mesh, source, printerId, setupReady]);
 
   const qty = Math.max(Number(quantity) || 1, 1);
 
@@ -412,9 +415,13 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
                   <p className="mt-2 text-xs text-slate-500">
                     {slicing
                       ? 'Slicing for the real weight and time…'
-                      : mesh
-                        ? 'No figure yet. Re-slice, or check the engine on Settings → Slicer.'
-                        : 'Choose a model to slice.'}
+                      : !setupReady
+                        // Say why rather than show a failure: the slicer is on
+                        // its way, and this job will slice once it lands.
+                        ? `${describeSetup(setup) ?? 'Setting up the slicer'}. This job slices as soon as it is ready.`
+                        : mesh
+                          ? 'No figure yet. Re-slice, or check the engine on Settings → Slicer.'
+                          : 'Choose a model to slice.'}
                   </p>
                 )}
 

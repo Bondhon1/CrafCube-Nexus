@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { engineStatus, engineUpload, engineUploadBinary, startEngine, stopEngine } from './engine';
+import { cleanUpStaging, ensureSlicer, slicerSetupState } from './slicer';
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 
@@ -216,11 +217,16 @@ if (process.platform === 'win32' && app.isPackaged) {
   app.setAppUserModelId('com.crafcube.nexus');
 }
 
+ipcMain.handle('slicer:status', () => slicerSetupState());
+ipcMain.handle('slicer:retry', () => { void ensureSlicer(); return slicerSetupState(); });
+
 app.whenReady().then(() => {
   createWindow();
-  // Started in the background: the app must not wait on it, and it is allowed
-  // to be unavailable.
+  // Both run in the background: the app must never wait on them. The engine
+  // is allowed to be unavailable, and the slicer check downloads OrcaSlicer
+  // only when the user does not already have a slicer installed.
   void startEngine();
+  void cleanUpStaging().then(() => ensureSlicer());
 });
 
 app.on('before-quit', stopEngine);

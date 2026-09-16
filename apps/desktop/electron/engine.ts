@@ -38,7 +38,7 @@ let port = BASE_PORT;
  * the old process was still answering. Bump this whenever engine behaviour
  * the app depends on changes.
  */
-const EXPECTED_VERSION = '0.3.0';
+const EXPECTED_VERSION = '0.4.0';
 
 /** Only valid once startEngine has chosen a port. */
 export function engineBaseUrl(): string {
@@ -59,16 +59,34 @@ function engineRoot(): string {
   return path.join(app.getAppPath(), '..', '..', 'services', 'local-engine');
 }
 
-function pythonExecutable(root: string): string | null {
-  const candidates =
-    process.platform === 'win32'
-      ? [path.join(root, '.venv', 'Scripts', 'python.exe')]
-      : [path.join(root, '.venv', 'bin', 'python3'), path.join(root, '.venv', 'bin', 'python')];
+interface Interpreter {
+  path: string;
+  /**
+   * The embeddable Python shipped in the installer. It runs isolated (`-I`):
+   * without that, the user's own per-user site-packages is still on the path,
+   * and trimesh's optional imports would quietly pick up whatever scipy or
+   * embree they once installed — behaving differently on every machine.
+   */
+  bundled: boolean;
+}
 
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
+function pythonExecutable(root: string): Interpreter | null {
+  const candidates: Interpreter[] = process.platform === 'win32'
+    ? [
+        { path: path.join(root, 'python', 'python.exe'), bundled: true },
+        { path: path.join(root, '.venv', 'Scripts', 'python.exe'), bundled: false },
+      ]
+    : [
+        { path: path.join(root, '.venv', 'bin', 'python3'), bundled: false },
+        { path: path.join(root, '.venv', 'bin', 'python'), bundled: false },
+      ];
+
+  return candidates.find((candidate) => existsSync(candidate.path)) ?? null;
+}
+
+/** Where the app keeps the OrcaSlicer it downloads, when the user has none. */
+export function slicerInstallDir(): string {
+  return path.join(app.getPath('userData'), 'slicer', 'orca');
 }
 
 interface EngineIdentity {
@@ -200,20 +218,31 @@ export async function startEngine(): Promise<EngineState> {
   const python = pythonExecutable(root);
   if (!python) {
     state = 'unavailable';
-    lastError =
-      `No Python environment at ${path.join(root, '.venv')}. ` +
-      'Create it with: python -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt';
+    lastError = app.isPackaged
+      ? `The bundled engine is missing from ${root}. Reinstall the app.`
+      : `No Python environment at ${path.join(root, '.venv')}. ` +
+        'Create it with: python -m venv .venv && .venv/Scripts/python -m pip install -r requirements-dev.txt';
     return state;
   }
 
   state = 'starting';
   lastError = null;
 
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    // Tells discovery where a downloaded slicer lives. Read on every request,
+    // so a download that finishes later is picked up without a restart.
+    NEXUS_SLICER_DIR: slicerInstallDir(),
+  };
+  // Inherited from how Electron itself was launched; meaningless to Python.
+  delete env.ELECTRON_RUN_AS_NODE;
+
   child = spawn(
-    python,
-    ['-m', 'uvicorn', 'app.main:app', '--host', HOST, '--port', String(port),
+    python.path,
+    [...(python.bundled ? ['-I'] : []),
+     '-m', 'uvicorn', 'app.main:app', '--host', HOST, '--port', String(port),
      '--log-level', 'warning'],
-    { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
+    { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
   );
 
   child.stderr?.on('data', (data: Buffer) => {

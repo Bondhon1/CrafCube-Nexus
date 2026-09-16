@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-electron/
 dist-preview/
+engine-bundle/
 release/
 .env
 .env.local
