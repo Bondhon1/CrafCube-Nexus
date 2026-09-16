@@ -30,7 +30,7 @@ const ENGINE_DIR = path.join(__dirname, '..', 'services', 'local-engine');
 const ENGINE = 'http://127.0.0.1:8765';
 let engineChild = null;
 
-const EXPECTED_ENGINE = '0.4.0';
+const EXPECTED_ENGINE = '0.5.0';
 
 const engineIdentity = async () => {
   try {

@@ -187,3 +187,130 @@ class TestConfidence:
     def test_nothing_available_is_low(self):
         level, _ = confidence_from_agreement(None, None)
         assert level == "LOW"
+
+
+class TestWaste:
+    """Waste measured by feature and computed for colour changes (§52-§53)."""
+
+    def test_multi_colour_slicer_total_is_not_just_the_first_filament(self):
+        # Orca writes one figure per filament. Reading the first alone reported
+        # a two-colour keychain as 3.02 g instead of 3.75 g.
+        lines = [
+            "; filament used [g] = 3.02, 0.73",
+            "; total filament used [g] = 3.75",
+        ]
+        result = parse_gcode(lines)
+        assert result.slicer_filament_grams == pytest.approx(3.75)
+        assert result.slicer_filament_grams_per_tool == [3.02, 0.73]
+
+    def test_per_tool_figures_are_summed_when_there_is_no_total(self):
+        result = parse_gcode(["; filament used [g] = 1.50, 2.25"])
+        assert result.slicer_filament_grams == pytest.approx(3.75)
+
+    def test_features_are_classified_by_their_type_label(self):
+        lines = """
+M83
+;TYPE:Custom
+G1 X5 E1.0
+;TYPE:Skirt
+G1 X10 E2.0
+;TYPE:Brim
+G1 X20 E3.0
+;TYPE:Outer wall
+G1 X30 E10.0
+;TYPE:Support
+G1 X40 E4.0
+;TYPE:Support interface
+G1 X50 E1.0
+;TYPE:Sparse infill
+G1 X60 E5.0
+""".strip().splitlines()
+        r = parse_gcode(lines)
+        grams = lambda mm: filament_grams(mm)  # noqa: E731
+        assert r.waste["prime_line_g"] == pytest.approx(grams(1.0), abs=1e-3)
+        assert r.waste["skirt_brim_g"] == pytest.approx(grams(5.0), abs=1e-3)
+        assert r.waste["support_g"] == pytest.approx(grams(5.0), abs=1e-3)
+        assert r.product_grams == pytest.approx(grams(15.0), abs=1e-3)
+        assert r.total_grams == pytest.approx(grams(26.0), abs=1e-3)
+
+    def test_purge_comes_from_the_flush_table_when_the_firmware_purges(self):
+        # Kobra X: the purge moves are commented out of the file, so only the
+        # slicer's flush table knows how much the printer will push out.
+        lines = """
+M83
+T0
+;TYPE:Outer wall
+G1 X10 E10.0
+T1
+;;; G1 E20.43 F300
+G1 X20 E5.0
+; flush_volumes_matrix = 0,546,184,0
+; flush_multiplier = 1
+; filament_density = 1.24,1.24
+""".strip().splitlines()
+        r = parse_gcode(lines)
+        assert r.tool_changes == 1
+        assert r.waste["purge_basis"] == "flush volumes"
+        # 546 mm3 of PLA at 1.24 g/cm3.
+        assert r.waste["purge_g"] == pytest.approx(0.677, abs=1e-3)
+        blue = next(row for row in r.per_tool if row["tool"] == 1)
+        black = next(row for row in r.per_tool if row["tool"] == 0)
+        assert blue["purge_g"] == pytest.approx(0.677, abs=1e-3), "purge is the incoming filament"
+        assert black["purge_g"] == 0
+
+    def test_flush_multiplier_scales_the_purge(self):
+        lines = ["M83", "T0", "G1 X1 E1", "T1", "G1 X2 E1",
+                 "; flush_volumes_matrix = 0,500,500,0", "; flush_multiplier = 1.5"]
+        assert parse_gcode(lines).waste["purge_g"] == pytest.approx(0.75 * 1.24, abs=1e-3)
+
+    def test_every_change_back_and_forth_is_purged(self):
+        lines = ["M83", "T0", "G1 X1 E1", "T1", "G1 X2 E1", "T0", "G1 X3 E1",
+                 "; flush_volumes_matrix = 0,100,200,0"]
+        r = parse_gcode(lines)
+        assert r.tool_changes == 2
+        # 0->1 purges 100 mm3 of filament 1; 1->0 purges 200 mm3 of filament 0.
+        assert r.waste["purge_g"] == pytest.approx(0.3 * 1.24, abs=1e-3)
+
+    def test_reselecting_the_same_filament_is_not_a_change(self):
+        lines = ["M83", "T0", "G1 X1 E1", "T0", "G1 X2 E1", "; flush_volumes_matrix = 0,100,100,0"]
+        r = parse_gcode(lines)
+        assert r.tool_changes == 0
+        assert r.waste["purge_g"] == 0
+
+    def test_a_printed_prime_tower_is_measured_not_computed_twice(self):
+        lines = """
+M83
+T0
+;TYPE:Outer wall
+G1 X10 E10.0
+T1
+;TYPE:Prime tower
+G1 X20 E4.0
+; flush_volumes_matrix = 0,546,184,0
+""".strip().splitlines()
+        r = parse_gcode(lines)
+        assert r.waste["purge_basis"] == "prime tower"
+        assert r.waste["purge_g"] == pytest.approx(filament_grams(4.0), abs=1e-3)
+
+    def test_changes_without_a_flush_table_warn_instead_of_guessing(self):
+        r = parse_gcode(["M83", "T0", "G1 X1 E1", "T1", "G1 X2 E1"])
+        assert r.waste["purge_basis"] == "unknown"
+        assert r.waste["purge_g"] == 0
+        assert any("flush volumes" in w for w in r.warnings)
+
+    def test_a_file_without_type_labels_is_all_product(self):
+        # Some slicers label nothing. That is not a file made entirely of waste.
+        r = parse_gcode(["M83", "G1 X10 E10.0", "G1 X20 E5.0"])
+        assert r.waste["total_g"] == 0
+        assert r.product_grams == pytest.approx(filament_grams(15.0), abs=1e-3)
+
+    def test_extrusion_before_the_first_label_is_priming_when_labels_exist(self):
+        r = parse_gcode(["M83", "G1 X0 E3.0", ";TYPE:Outer wall", "G1 X10 E10.0"])
+        assert r.waste["prime_line_g"] == pytest.approx(filament_grams(3.0), abs=1e-3)
+
+    def test_each_filament_uses_its_own_density(self):
+        # PETG at 1.27 purging into a PLA job must not be priced as PLA.
+        lines = ["M83", "T0", "G1 X1 E10", "T1", "G1 X2 E10",
+                 "; filament_density = 1.24,1.27", "; flush_volumes_matrix = 0,1000,1000,0"]
+        r = parse_gcode(lines)
+        assert r.waste["purge_g"] == pytest.approx(1.27, abs=1e-3)

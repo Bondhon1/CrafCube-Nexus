@@ -38,7 +38,7 @@ let port = BASE_PORT;
  * the old process was still answering. Bump this whenever engine behaviour
  * the app depends on changes.
  */
-const EXPECTED_VERSION = '0.4.0';
+const EXPECTED_VERSION = '0.5.0';
 
 /** Only valid once startEngine has chosen a port. */
 export function engineBaseUrl(): string {

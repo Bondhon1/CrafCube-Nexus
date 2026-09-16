@@ -12,9 +12,11 @@ slice.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tempfile
+import zipfile
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
@@ -56,6 +58,7 @@ def _build_args(
     machine: Path,
     process: Path,
     filament: Path,
+    filament_slots: int = 1,
 ) -> list[str]:
     """OrcaSlicer CLI form.
 
@@ -69,9 +72,44 @@ def _build_args(
         "--slice", "0",
         "--outputdir", str(output_dir),
         "--load-settings", f"{machine};{process}",
-        "--load-filaments", str(filament),
+        # One profile per colour the project uses. With a single slot every
+        # painted colour collapses onto one filament and the purge vanishes.
+        "--load-filaments", ";".join([str(filament)] * max(filament_slots, 1)),
         str(model),
     ]
+
+
+def _project_filaments(model_path: Path) -> int:
+    """How many filaments a painted Orca/Bambu project uses; 0 if it is not one.
+
+    Such a project carries per-triangle paint and its own filament list. Handed
+    to the slicer as a mesh, all of that is lost: every colour lands on one
+    filament, so there are no colour changes, no purge, and no way to say how
+    much of each spool the job takes.
+    """
+    if model_path.suffix.lower() != ".3mf":
+        return 0
+    try:
+        with zipfile.ZipFile(model_path) as archive:
+            names = archive.namelist()
+            painted = any(
+                name.lower().endswith(".model") and b'paint_color="' in archive.read(name)
+                for name in names
+            )
+            count = 0
+            if "Metadata/project_settings.config" in names:
+                try:
+                    config = json.loads(archive.read("Metadata/project_settings.config"))
+                    colours = config.get("filament_colour") or config.get("filament_settings_id")
+                    if isinstance(colours, list):
+                        count = len(colours)
+                except ValueError:
+                    pass
+    except (OSError, zipfile.BadZipFile):
+        return 0
+    if count >= 2:
+        return count
+    return 2 if painted else 0
 
 
 def _plate_files(model_path: Path, workdir: Path, bed: Bed) -> tuple[list[Path], list[str], int]:
@@ -142,6 +180,32 @@ def _combine(results: list[GcodeResult]) -> GcodeResult:
                 warnings.append(warning)
 
     seconds = total(lambda r: r.slicer_print_time_seconds)
+
+    # Waste and the per-filament breakdown add up plate by plate.
+    kinds = [k for k in first.waste if k.endswith("_g")]
+    waste: dict[str, Any] = {
+        k: round(sum(r.waste.get(k, 0.0) for r in results), 3) for k in kinds
+    }
+    bases = {r.waste.get("purge_basis") for r in results}
+    waste["purge_basis"] = next(
+        (b for b in ("prime tower", "flush volumes", "unknown") if b in bases), "none")
+    waste["tool_changes"] = sum(r.tool_changes for r in results)
+
+    rows: dict[int, dict[str, Any]] = {}
+    for result in results:
+        for row in result.per_tool:
+            into = rows.setdefault(row["tool"], {"tool": row["tool"]})
+            for key, value in row.items():
+                if key != "tool":
+                    into[key] = round(into.get(key, 0.0) + value, 3)
+
+    slots = max((len(r.slicer_filament_grams_per_tool) for r in results), default=0)
+    slicer_per_tool = [
+        round(sum(r.slicer_filament_grams_per_tool[i]
+                  for r in results if i < len(r.slicer_filament_grams_per_tool)), 3)
+        for i in range(slots)
+    ]
+
     return GcodeResult(
         calculated_filament_mm=round(sum(r.calculated_filament_mm for r in results), 3),
         calculated_filament_cm3=round(sum(r.calculated_filament_cm3 for r in results), 4),
@@ -157,6 +221,12 @@ def _combine(results: list[GcodeResult]) -> GcodeResult:
         filament_diameter_mm=first.filament_diameter_mm,
         per_tool_filament_mm=per_tool,
         warnings=warnings,
+        slicer_filament_grams_per_tool=slicer_per_tool,
+        tool_changes=sum(r.tool_changes for r in results),
+        product_grams=total(lambda r: r.product_grams),
+        total_grams=total(lambda r: r.total_grams),
+        waste=waste,
+        per_tool=[rows[t] for t in sorted(rows)],
     )
 
 
@@ -220,84 +290,94 @@ def slice_model(
             profiles.machine, Bed(bed_x_mm, bed_y_mm, bed_z_mm),
         )
 
-        try:
-            plate_files, notes, part_count = _plate_files(model_path, workdir, bed)
-        except LayoutError as exc:
-            # A part larger than the bed is a fact about the model, not a
-            # slicer failure, and saying so beats relaying exit -50.
-            return SliceResult(
-                False, chosen.name, time.monotonic() - started, part_count=0,
-                error=str(exc),
-            )
-        except ValueError as exc:
-            return SliceResult(False, chosen.name, time.monotonic() - started, error=str(exc))
+        def run(inputs: list[Path], slots: int, label: str) -> tuple[list[GcodeResult], Path | None, SliceResult | None]:
+            """Slice each input; return the parsed G-code, or a failure to report."""
+            parsed: list[GcodeResult] = []
+            kept: Path | None = None
+            for index, sliceable in enumerate(inputs, start=1):
+                out_dir = workdir / f"{label}{index}"
+                out_dir.mkdir(exist_ok=True)
+                args = _build_args(chosen.executable, sliceable, out_dir,
+                                   profiles.machine, profiles.process, profiles.filament, slots)
+                try:
+                    completed = subprocess.run(args, capture_output=True, text=True,
+                                               timeout=timeout_seconds, cwd=str(out_dir))
+                except subprocess.TimeoutExpired:
+                    return [], None, SliceResult(
+                        False, chosen.name, time.monotonic() - started,
+                        error=f"slicer timed out after {timeout_seconds}s")
+                except OSError as exc:
+                    return [], None, SliceResult(
+                        False, chosen.name, time.monotonic() - started,
+                        error=f"could not run slicer: {exc}")
 
-        parsed_plates: list[GcodeResult] = []
-        kept_path: str | None = None
-        last_stdout = last_stderr = ""
+                # A project can hold several plates, each its own G-code file.
+                produced = sorted(set(out_dir.glob("*.gcode")) | set(out_dir.glob("**/*.gcode")))
+                if not produced:
+                    # A non-zero exit with no output is the usual signal that the
+                    # CLI rejected an argument; surface its own message rather
+                    # than guess.
+                    where = "" if len(inputs) == 1 else f" on plate {index} of {len(inputs)}"
+                    return [], None, SliceResult(
+                        False, chosen.name, time.monotonic() - started,
+                        stdout=completed.stdout[-4000:], stderr=completed.stderr[-4000:],
+                        plate_count=len(inputs),
+                        error=(f"slicer produced no G-code{where} (exit {completed.returncode})"
+                               + (f": {completed.stdout.strip().splitlines()[-1]}"
+                                  if completed.stdout.strip() else "")),
+                    )
+                for gcode_file in produced:
+                    parsed.append(parse_gcode(
+                        gcode_file.read_text(encoding="utf-8", errors="ignore").splitlines(),
+                        default_density_g_cm3=density_g_cm3,
+                    ))
+                    kept = kept or gcode_file
+            return parsed, kept, None
 
-        for index, sliceable in enumerate(plate_files, start=1):
-            plate_dir = workdir / f"out{index}"
-            plate_dir.mkdir(exist_ok=True)
-            args = _build_args(
-                chosen.executable, sliceable, plate_dir,
-                profiles.machine, profiles.process, profiles.filament,
-            )
+        notes: list[str] = []
+        plates: list[GcodeResult] = []
+        kept_path: Path | None = None
+        part_count = 1
+
+        # Painted projects first, as they are: their colours are what make the
+        # purge, and the per-spool split, knowable at all.
+        filaments = _project_filaments(model_path)
+        if filaments >= 2:
+            plates, kept_path, failure = run([model_path], filaments, "native")
+            if failure is None:
+                notes.append(f"sliced as a {filaments}-colour project, colours kept")
+            else:
+                plates = []
+                notes.append(
+                    "the slicer could not take this project as it is, so it was sliced as "
+                    "one colour: colour-change purge and the per-spool split are not known"
+                )
+
+        if not plates:
             try:
-                completed = subprocess.run(
-                    args,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout_seconds,
-                    cwd=str(plate_dir),
-                )
-            except subprocess.TimeoutExpired:
+                plate_files, layout_notes, part_count = _plate_files(model_path, workdir, bed)
+            except LayoutError as exc:
+                # A part larger than the bed is a fact about the model, not a
+                # slicer failure, and saying so beats relaying exit -50.
                 return SliceResult(
-                    False, chosen.name, time.monotonic() - started,
-                    error=f"slicer timed out after {timeout_seconds}s",
+                    False, chosen.name, time.monotonic() - started, part_count=0,
+                    error=str(exc),
                 )
-            except OSError as exc:
-                return SliceResult(
-                    False, chosen.name, time.monotonic() - started,
-                    error=f"could not run slicer: {exc}",
-                )
+            except ValueError as exc:
+                return SliceResult(False, chosen.name, time.monotonic() - started, error=str(exc))
+            notes.extend(layout_notes)
+            plates, kept_path, failure = run(plate_files, 1, "plate")
+            if failure is not None:
+                failure.part_count = part_count
+                return failure
 
-            last_stdout, last_stderr = completed.stdout, completed.stderr
-            produced = sorted(plate_dir.glob("*.gcode")) + sorted(plate_dir.glob("**/*.gcode"))
-            if not produced:
-                # A non-zero exit with no output is the usual signal that the
-                # CLI rejected an argument; surface its own message rather
-                # than guess.
-                where = "" if len(plate_files) == 1 else f" on plate {index} of {len(plate_files)}"
-                return SliceResult(
-                    False, chosen.name, time.monotonic() - started,
-                    stdout=completed.stdout[-4000:],
-                    stderr=completed.stderr[-4000:],
-                    plate_count=len(plate_files), part_count=part_count,
-                    error=(
-                        f"slicer produced no G-code{where} (exit {completed.returncode})"
-                        + (f": {completed.stdout.strip().splitlines()[-1]}"
-                           if completed.stdout.strip() else "")
-                    ),
-                )
-
-            gcode_file = produced[0]
-            parsed_plates.append(parse_gcode(
-                gcode_file.read_text(encoding="utf-8", errors="ignore").splitlines(),
-                default_density_g_cm3=density_g_cm3,
-            ))
-            if kept_path is None:
-                kept_path = str(gcode_file)
-
-        parsed: GcodeResult = _combine(parsed_plates)
-        gcode_file = Path(kept_path) if kept_path else plate_files[0]
-        conversion_note = "; ".join(notes) if notes else None
-        completed_stdout, completed_stderr = last_stdout, last_stderr
+        parsed: GcodeResult = _combine(plates)
 
         # Keep the G-code: §43 wants an estimate to be reproducible, and the
         # file is the evidence behind the number.
-        kept = Path(tempfile.gettempdir()) / f"nexus-{gcode_file.name}"
-        shutil.copy2(gcode_file, kept)
+        assert kept_path is not None
+        kept = Path(tempfile.gettempdir()) / f"nexus-{kept_path.name}"
+        shutil.copy2(kept_path, kept)
 
         return SliceResult(
             ok=True,
@@ -305,11 +385,9 @@ def slice_model(
             duration_seconds=round(time.monotonic() - started, 2),
             gcode=parsed.to_dict(),
             gcode_path=str(kept),
-            plate_count=len(plate_files),
+            plate_count=len(plates),
             part_count=part_count,
-            stdout=completed_stdout[-2000:],
-            stderr=completed_stderr[-2000:],
-            warnings=parsed.warnings + ([conversion_note] if conversion_note else []),
+            warnings=parsed.warnings + notes,
         )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

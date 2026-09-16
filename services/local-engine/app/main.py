@@ -35,7 +35,7 @@ from app.slicer.profiles import available_printers
 from app.slicer.runner import slice_model
 from app.three_mf.reader import inspect_3mf
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 # Formats trimesh can read that are meaningful for printing.
 SUPPORTED_MESH_SUFFIXES = {".stl", ".3mf", ".obj", ".ply", ".off", ".glb", ".gltf"}
