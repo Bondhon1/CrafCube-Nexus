@@ -579,3 +579,30 @@ export function Sparkline({ values, color = ACCENT }: { values: number[]; color?
     </svg>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Where filament goes — shared by the dashboard and the waste screen
+// ---------------------------------------------------------------------------
+
+/**
+ * Six bands, which is exactly the validated palette: product first, then each
+ * kind of waste, then everything else that left stock. Samples and drying loss
+ * share a band because neither is a production cost.
+ */
+export const FILAMENT_BANDS = [
+  'Into the part', 'Colour-change purge', 'Support', 'Brim, skirt & priming',
+  'Failed prints', 'Samples & drying',
+] as const;
+
+export function filamentBands(row: {
+  product_grams: number | string; purge_grams: number | string; support_grams: number | string;
+  skirt_brim_grams: number | string; prime_line_grams: number | string;
+  failure_grams: number | string; sample_grams: number | string; drying_grams: number | string;
+}): number[] {
+  const n = (v: number | string) => Number(v) || 0;
+  return [
+    n(row.product_grams), n(row.purge_grams), n(row.support_grams),
+    n(row.skirt_brim_grams) + n(row.prime_line_grams),
+    n(row.failure_grams), n(row.sample_grams) + n(row.drying_grams),
+  ];
+}

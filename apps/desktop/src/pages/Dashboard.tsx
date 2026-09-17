@@ -7,7 +7,8 @@ import { formatDuration, reorderAdvice, stockLevel } from '@crafcube/types';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/app/SessionProvider';
 import {
-  ACCENT, BarChart, LineChart, RankedBars, Sparkline, StackedBarChart, type Point,
+  ACCENT, BarChart, FILAMENT_BANDS, LineChart, RankedBars, Sparkline, StackedBarChart,
+  filamentBands, type Point,
 } from '@/components/charts';
 
 interface Data {
@@ -207,14 +208,11 @@ export function Dashboard() {
         <StackedBarChart
           title="Where filament goes"
           subtitle="Anything above the first band never became a product."
-          names={['Into product', 'Wasted', 'Samples', 'Drying loss']}
+          names={[...FILAMENT_BANDS]}
           format={(v) => `${(v / 1000).toFixed(1)} kg`}
           points={data.waste.map((w) => ({
             label: monthLabel(w.month),
-            parts: [
-              Number(w.product_grams), Number(w.waste_grams),
-              Number(w.sample_grams), Number(w.drying_grams),
-            ],
+            parts: filamentBands(w),
           }))}
         />
       </section>

@@ -59,6 +59,10 @@ export interface PrintJob {
   estimated_grams: number;
   estimated_seconds: number;
   estimated_cost: number;
+  /** Waste included in estimated_grams: purge, support, brim, prime line. */
+  estimated_waste_grams: number;
+  custom_build_id: UUID | null;
+  slice_result_id: UUID | null;
   actual_grams: number | null;
   actual_seconds: number | null;
   failed_quantity: number;

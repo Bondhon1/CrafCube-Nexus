@@ -232,7 +232,13 @@ export interface WasteAnalytics {
   organization_id: UUID;
   month: string;
   product_grams: number;
+  /** All WASTE ledger rows; the kinds below break it down. */
   waste_grams: number;
+  purge_grams: number;
+  support_grams: number;
+  skirt_brim_grams: number;
+  prime_line_grams: number;
+  failure_grams: number;
   sample_grams: number;
   drying_grams: number;
   total_grams: number;

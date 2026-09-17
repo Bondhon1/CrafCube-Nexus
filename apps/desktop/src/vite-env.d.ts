@@ -60,14 +60,22 @@ interface SliceResponse {
     /** Plates the parts needed, and how many parts were laid out (§20). */
     plate_count?: number;
     part_count?: number;
+    warnings?: string[];
     gcode: {
       slicer_filament_grams: number | null;
+      slicer_filament_grams_per_tool: number[];
       calculated_filament_grams: number | null;
       slicer_print_time_seconds: number | null;
       layer_count: number;
       per_tool_filament_mm: Record<string, number>;
       density_g_cm3: number | null;
       filament_diameter_mm: number;
+      tool_changes: number;
+      /** What ends up in the part, and everything the job consumes. */
+      product_grams: number | null;
+      total_grams: number | null;
+      waste: import('@crafcube/types').WasteBreakdown;
+      per_tool: import('@crafcube/types').ToolBreakdown[];
     } | null;
   };
   confidence?: { level: string; reason: string };

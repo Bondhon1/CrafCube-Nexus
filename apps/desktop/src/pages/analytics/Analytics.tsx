@@ -14,7 +14,7 @@ import {
 } from '@/components/ui';
 import { Figure, Meter, NotEnoughData } from '@/components/analytics';
 import {
-  ACCENT, BarChart, LineChart, RankedBars, SERIES, StackedBarChart,
+  ACCENT, BarChart, FILAMENT_BANDS, LineChart, RankedBars, SERIES, StackedBarChart, filamentBands,
 } from '@/components/charts';
 
 // The second categorical slot, for the paired comparison charts. Taken from the
@@ -429,10 +429,11 @@ function Waste({
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Figure label="Into product"
+        <Figure label="Into the part"
                 value={current ? `${(Number(current.product_grams) / 1000).toFixed(2)} kg` : '—'} />
-        <Figure label="Wasted"
-                value={current ? `${(Number(current.waste_grams) / 1000).toFixed(2)} kg` : '—'}
+        <Figure label="Colour-change purge"
+                value={current ? `${(Number(current.purge_grams) / 1000).toFixed(2)} kg` : '—'}
+                hint={current ? `of ${(Number(current.waste_grams) / 1000).toFixed(2)} kg wasted in all` : undefined}
                 tone="warn" />
         <Figure label="Outside finished products"
                 value={share === null ? '—' : `${share.toFixed(1)}%`}
@@ -511,22 +512,19 @@ function Waste({
 
       <StackedBarChart
         title="Where filament goes, month by month"
-        subtitle="Everything above the first band left stock without becoming a product."
-        names={['Into product', 'Wasted', 'Samples', 'Drying loss']}
+        subtitle="Everything above the first band left stock without ending up in a part. Purge, support and brim are measured from each slice."
+        names={[...FILAMENT_BANDS]}
         format={kilos}
         points={months.slice().reverse().map((m) => ({
           label: monthShort(m.month),
-          parts: [
-            Number(m.product_grams), Number(m.waste_grams),
-            Number(m.sample_grams), Number(m.drying_grams),
-          ],
+          parts: filamentBands(m),
         }))}
       />
 
       <Panel>
-        <Table head={<><Th>Month</Th><Th right>Product</Th><Th right>Waste</Th>
-          <Th right>Samples</Th><Th right>Drying</Th><Th right>Outside product</Th></>}>
-          {months.length === 0 && <EmptyRow colSpan={6}>No filament has moved yet.</EmptyRow>}
+        <Table head={<><Th>Month</Th><Th right>In parts</Th><Th right>Purge</Th><Th right>Support</Th>
+          <Th right>Brim & priming</Th><Th right>Failed</Th><Th right>Outside product</Th></>}>
+          {months.length === 0 && <EmptyRow colSpan={7}>No filament has moved yet.</EmptyRow>}
           {months.map((m) => {
             const monthShare = wasteSharePercent(m);
             return (
@@ -536,9 +534,12 @@ function Waste({
                     { month: 'long', year: 'numeric' })}
                 </Td>
                 <Td right className="text-slate-300"><Grams value={m.product_grams} /></Td>
-                <Td right className="text-slate-400"><Grams value={m.waste_grams} /></Td>
-                <Td right className="text-slate-500"><Grams value={m.sample_grams} /></Td>
-                <Td right className="text-slate-500"><Grams value={m.drying_grams} /></Td>
+                <Td right className="text-slate-400"><Grams value={m.purge_grams} /></Td>
+                <Td right className="text-slate-400"><Grams value={m.support_grams} /></Td>
+                <Td right className="text-slate-500">
+                  <Grams value={Number(m.skirt_brim_grams) + Number(m.prime_line_grams)} />
+                </Td>
+                <Td right className="text-slate-500"><Grams value={m.failure_grams} /></Td>
                 <Td right>
                   <span className={monthShare !== null && monthShare > 15
                     ? 'text-amber-300' : 'text-slate-400'}>

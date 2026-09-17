@@ -39,6 +39,7 @@ export const NAVIGATION: NavSection[] = [
     children: [
       { label: 'Library', path: '/models/library' },
       { label: 'Upload', path: '/models/upload' },
+      { label: 'Custom builds', path: '/models/custom' },
     ],
   },
   {
@@ -119,6 +120,7 @@ export const NAVIGATION: NavSection[] = [
       { label: 'Slicer', path: '/settings/slicer' },
       { label: 'Notifications', path: '/settings/notifications' },
       { label: 'Storage', path: '/settings/storage' },
+      { label: 'Integrations', path: '/settings/integrations' },
     ],
   },
 ];

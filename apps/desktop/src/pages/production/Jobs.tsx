@@ -282,7 +282,12 @@ function FinishModal({
   job, onClose, onSaved,
 }: { job: JobRow; onClose: () => void; onSaved: () => void }) {
   const failing = job.status === 'FAILED';
-  const [grams, setGrams] = useState(String(job.estimated_grams));
+  // The scale weighs the part, and purge never ends up in the part — so the
+  // figure asked for, and pre-filled, is the part alone. Waste is recorded
+  // from the slice, because nothing can weigh it.
+  const wasteGrams = Number(job.estimated_waste_grams ?? 0);
+  const partEstimate = Math.max(Number(job.estimated_grams) - wasteGrams, 0);
+  const [grams, setGrams] = useState(partEstimate.toFixed(1));
   const [hours, setHours] = useState((job.estimated_seconds / 3600).toFixed(2));
   const [failedQty, setFailedQty] = useState(failing ? String(job.quantity) : '0');
   const [reason, setReason] = useState('');
@@ -316,11 +321,11 @@ function FinishModal({
         <p className="text-sm text-slate-400">
           {failing
             ? 'Material used before the failure is deducted as waste, so it stays out of production cost.'
-            : 'Weigh the print if you can — the actual figure is what teaches the estimator.'}
+            : 'Weigh the finished part if you can — the actual figure is what teaches the estimator.'}
         </p>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Material used (g)">
+          <Field label={failing ? 'Weight of the failed print (g)' : 'Weight of the part (g)'}>
             <input required type="number" step="0.1" min="0" className="field" value={grams}
                    onChange={(e) => setGrams(e.target.value)} autoFocus />
           </Field>
@@ -344,8 +349,13 @@ function FinishModal({
         )}
 
         <div className="rounded-lg border border-line bg-ink-950/50 px-4 py-3 text-sm text-slate-400">
-          Estimated <Grams value={job.estimated_grams} /> ·{' '}
-          {formatDuration(job.estimated_seconds)}
+          Part estimated at <Grams value={partEstimate} /> · {formatDuration(job.estimated_seconds)}
+          {wasteGrams > 0 && (
+            <p className="mt-1 text-xs text-slate-500">
+              Plus <Grams value={wasteGrams} /> of waste (purge, support, brim), recorded
+              automatically from the slice.
+            </p>
+          )}
         </div>
 
         <div className="modal-actions">

@@ -6,3 +6,4 @@ export * from './costing.js';
 export * from './production.js';
 export * from './sales.js';
 export * from './intelligence.js';
+export * from './slicing.js';

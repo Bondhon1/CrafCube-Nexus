@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { FilamentSpool, Model, ModelFile, ModelVersion, Printer } from '@crafcube/types';
-import { formatDuration } from '@crafcube/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  CustomBuild, FilamentSpool, Model, ModelFile, ModelVersion, Printer, StoredSlice, WasteKind,
+} from '@crafcube/types';
+import {
+  CUSTOM_BUILD_SOURCE_LABELS, WASTE_KINDS, WASTE_KIND_LABELS, formatDuration,
+  sliceSettingsKey, toolWasteForJob, wastePercent,
+} from '@crafcube/types';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/app/SessionProvider';
 import { objectStore } from '@/lib/storage';
@@ -8,6 +13,7 @@ import { Badge, ErrorNote, Field, Grams, Modal } from '@/components/ui';
 import { JobAdvisor } from '@/components/JobAdvisor';
 import { Visualizer, type ColorGroup } from '@/components/Visualizer';
 import { describeSetup, useSlicerSetup } from '@/lib/slicerSetup';
+import { findStoredSlice, jobSliceSettings, sha256Hex, sliceAndStore } from '@/lib/slices';
 
 interface VersionWithFiles extends ModelVersion {
   files: ModelFile[];
@@ -19,53 +25,63 @@ type SpoolOption = FilamentSpool & {
   product: { name: string; color_hex: string | null; color_name: string | null } | null;
 };
 
-/** One colour of the job: a tool slot, its share of material, and its spool. */
+type WasteGrams = Record<`${WasteKind}_g`, number>;
+
+/** One colour of the job: a filament slot, what it consumes, and its spool. */
 interface Lane {
   toolIndex: number;
+  /** Everything this spool gives up per copy — product and waste. */
   grams: number;
+  waste: WasteGrams;
   spoolId: string;
-  /** Colour the file carried, kept so a lane without a spool still looks right. */
+  /** Colour the file carried, so a lane without a spool still looks right. */
   sourceColor: string;
 }
 
-interface Estimate {
-  grams: number;
-  seconds: number;
-  confidence: string;
-  detail: string;
-}
+type Mode = 'library' | 'custom';
 
-function lengthToGrams(mm: number, diameterMm: number, density: number): number {
-  const radiusCm = diameterMm / 2 / 10;
-  return Math.PI * radiusCm * radiusCm * (mm / 10) * density;
-}
+const NO_WASTE: WasteGrams = { purge_g: 0, support_g: 0, skirt_brim_g: 0, prime_line_g: 0 };
+const FALLBACK_COLOUR = '#2fe3b5';
 
-export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+export function NewJobModal({
+  onClose, onSaved, initialBuildId,
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+  /** Opens straight onto a custom build, from the custom builds screen. */
+  initialBuildId?: string;
+}) {
   const { activeOrg } = useSession();
   const setup = useSlicerSetup();
   const setupReady = setup === null || setup.phase === 'ready' || setup.phase === 'installed';
 
+  const [mode, setMode] = useState<Mode>(initialBuildId ? 'custom' : 'library');
   const [models, setModels] = useState<ModelWithVersions[]>([]);
+  const [builds, setBuilds] = useState<CustomBuild[]>([]);
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [spools, setSpools] = useState<SpoolOption[]>([]);
 
   const [modelId, setModelId] = useState('');
+  const [buildId, setBuildId] = useState(initialBuildId ?? '');
+  const [dropped, setDropped] = useState<{ buffer: ArrayBuffer; filename: string; sha: string } | null>(null);
   const [printerId, setPrinterId] = useState('');
   const [quantity, setQuantity] = useState('1');
 
-  const [mesh, setMesh] = useState<{ buffer: ArrayBuffer; filename: string } | null>(null);
+  const [libraryMesh, setLibraryMesh] = useState<{ buffer: ArrayBuffer; filename: string } | null>(null);
   const [groups, setGroups] = useState<ColorGroup[]>([]);
   const [lanes, setLanes] = useState<Lane[]>([]);
-  const [estimate, setEstimate] = useState<Estimate | null>(null);
+  const [slice, setSlice] = useState<StoredSlice | null>(null);
+  const [sliceOrigin, setSliceOrigin] = useState<'stored' | 'new' | null>(null);
   const [loadingMesh, setLoadingMesh] = useState(false);
   const [slicing, setSlicing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!activeOrg) return;
     void (async () => {
-      const [m, p, s] = await Promise.all([
+      const [m, p, s, b] = await Promise.all([
         supabase.from('models')
           .select('*, versions:model_versions(*, files:model_files(*))')
           .eq('organization_id', activeOrg.id).eq('archived', false).order('name'),
@@ -74,10 +90,14 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
         supabase.from('filament_spools')
           .select('*, product:filament_products(name, color_hex, color_name)')
           .eq('organization_id', activeOrg.id).in('status', ['sealed', 'in_use']).order('code'),
+        supabase.from('custom_builds').select('*')
+          .eq('organization_id', activeOrg.id).neq('status', 'archived')
+          .order('created_at', { ascending: false }).limit(100),
       ]);
       setModels((m.data ?? []) as unknown as ModelWithVersions[]);
       setPrinters((p.data ?? []) as Printer[]);
       setSpools((s.data ?? []) as unknown as SpoolOption[]);
+      setBuilds((b.data ?? []) as CustomBuild[]);
       setPrinterId((c) => c || (p.data?.[0] as Printer | undefined)?.id || '');
     })();
   }, [activeOrg]);
@@ -87,159 +107,170 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
     () => (model ? [...model.versions].sort((a, b) => b.version - a.version)[0] : undefined),
     [model],
   );
-  const printer = printers.find((p) => p.id === printerId);
   const source = version?.files.find((f) => f.kind === 'source' || f.kind === 'mesh');
+  const build = builds.find((b) => b.id === buildId);
+  const printer = printers.find((p) => p.id === printerId);
+  const settings = useMemo(() => jobSliceSettings(printer), [printer]);
+  const settingsKey = sliceSettingsKey(settings);
 
-  const bed = {
+  const bed = useMemo(() => ({
     x: Number(printer?.build_x_mm ?? 260),
     y: Number(printer?.build_y_mm ?? 260),
     z: Number(printer?.build_z_mm ?? 260),
-  };
+  }), [printer]);
 
-  // Load the model itself, so colours can be read from the file rather than
-  // guessed. 3MF keeps its material groups; STL is a single body.
+  // What is being sliced: its content hash, its name, and its bytes if we have
+  // them. A custom build from the studio has a hash but, until someone drops
+  // its file here, no bytes.
+  const target = useMemo(() => {
+    if (mode === 'library') {
+      return source
+        ? { sha: source.sha256, name: source.filename, buffer: libraryMesh?.buffer ?? null }
+        : null;
+    }
+    const sha = build?.file_sha256 ?? dropped?.sha ?? null;
+    if (!sha) return null;
+    const buffer = dropped && dropped.sha === sha ? dropped.buffer : null;
+    return { sha, name: build?.file_name ?? dropped?.filename ?? 'model.3mf', buffer };
+  }, [mode, source, libraryMesh, build, dropped]);
+
+  const preview = mode === 'library'
+    ? libraryMesh
+    : dropped && target && dropped.sha === target.sha
+      ? { buffer: dropped.buffer, filename: dropped.filename }
+      : null;
+
+  // Library models live in storage; download the file for preview and slicing.
   useEffect(() => {
-    if (!source) { setMesh(null); setGroups([]); return; }
+    if (mode !== 'library' || !source) { setLibraryMesh(null); return; }
     let cancelled = false;
     setLoadingMesh(true);
     setError(null);
-
     void (async () => {
       try {
         const blob = await objectStore.download(source.storage_key);
-        if (cancelled) return;
-        setMesh({ buffer: await blob.arrayBuffer(), filename: source.filename });
+        if (!cancelled) setLibraryMesh({ buffer: await blob.arrayBuffer(), filename: source.filename });
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       } finally {
         if (!cancelled) setLoadingMesh(false);
       }
     })();
-
     return () => { cancelled = true; };
-  }, [source]);
+  }, [mode, source]);
 
   /**
-   * Colour groups from the file become lanes, with no weight until the slice
-   * says what it is.
+   * Use the stored slice if there is one; slice only when there is not.
    *
-   * There used to be a geometry guess here — volume x density x 0.35 — shown
-   * while the operator decided. It read like a figure and was not one: on this
-   * shop's own models it came out +32% and +49% against the real slice, and a
-   * guess that looks like a measurement is worse than no number at all.
+   * Opening the same job twice must show the same numbers, and a one-off build
+   * whose file was never kept has no other way to have numbers at all.
    */
-  const handleGroups = useCallback((detected: ColorGroup[]) => {
-    setGroups(detected);
-    setLanes((current) => {
-      if (current.length === detected.length) return current;
-      return detected.map((g, i) => ({
-        toolIndex: i,
-        grams: 0,
-        spoolId: '',
-        sourceColor: g.sourceColor,
-      }));
-    });
-  }, []);
+  useEffect(() => {
+    if (!activeOrg || !target) { setSlice(null); setSliceOrigin(null); return; }
+    let cancelled = false;
+    setError(null);
 
-  const runSlice = useCallback(async () => {
-    const bridge = window.nexus?.engine;
-    if (!bridge || !mesh || !source) return;
+    void (async () => {
+      try {
+        setSlicing('Looking for a stored slice…');
+        const stored = await findStoredSlice(activeOrg.id, target.sha, settings);
+        if (cancelled) return;
+        if (stored) {
+          setSlice(stored);
+          setSliceOrigin('stored');
+          return;
+        }
+        setSlice(null);
+        setSliceOrigin(null);
+        if (!target.buffer || !setupReady) return;
+
+        setSlicing('Slicing…');
+        const fresh = await sliceAndStore({
+          organizationId: activeOrg.id, buffer: target.buffer, fileName: target.name,
+          fileSha256: target.sha, settings, bed,
+        });
+        if (!cancelled) {
+          setSlice(fresh);
+          setSliceOrigin('new');
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cancelled) setSlicing(null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // bed and settings are captured through settingsKey and the printer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrg, target?.sha, target?.buffer, settingsKey, setupReady]);
+
+  /** The only way a stored slice is replaced: someone asks for it. */
+  async function reslice() {
+    if (!activeOrg || !target?.buffer) return;
     setError(null);
     setSlicing('Slicing…');
     try {
-      const response = await bridge.slice(source.filename, mesh.buffer, {
-        printer: (printer?.model || printer?.name || 'Kobra X').replace(/^Anycubic\s+/i, ''),
-        vendor: printer?.brand || 'Anycubic',
-        layer_height_mm: 0.2,
-        infill_percent: 15,
-        nozzle_mm: 0.4,
-        // Fallback only — the machine profile states the real build volume.
-        bed_x_mm: bed.x,
-        bed_y_mm: bed.y,
-        bed_z_mm: bed.z,
+      const fresh = await sliceAndStore({
+        organizationId: activeOrg.id, buffer: target.buffer, fileName: target.name,
+        fileSha256: target.sha, settings, bed,
       });
-
-      if (response.status !== 'success' || !response.slice.gcode) {
-        setError(response.slice.error ?? 'The slicer produced no result.');
-        return;
-      }
-
-      const plates = response.slice.plate_count ?? 1;
-      const parts = response.slice.part_count ?? 1;
-      const g = response.slice.gcode;
-      const total = g.slicer_filament_grams ?? g.calculated_filament_grams ?? 0;
-      const density = g.density_g_cm3 ?? 1.24;
-      const perTool = Object.entries(g.per_tool_filament_mm ?? {});
-
-      setEstimate({
-        grams: total,
-        seconds: g.slicer_print_time_seconds ?? 0,
-        confidence: response.confidence?.level ?? 'MEDIUM',
-        detail: [
-          response.confidence?.reason ?? 'Sliced',
-          // A multi-object file gets re-laid out, and how many plates that
-          // took is part of what the operator is being quoted for (§20).
-          plates > 1
-            ? `${parts} parts across ${plates} plates — the time is their total.`
-            : parts > 1 ? `${parts} parts on one plate.` : '',
-        ].filter(Boolean).join(' '),
-      });
-
-      // Real per-tool weights replace the triangle-share guess. Existing spool
-      // choices are preserved so a re-slice does not undo the operator's work.
-      setLanes((current) =>
-        perTool.length > 1
-          ? perTool.map(([tool, mm], i) => ({
-              toolIndex: Number(tool),
-              grams: Math.round(lengthToGrams(mm, g.filament_diameter_mm, density) * 10) / 10,
-              spoolId: current[i]?.spoolId ?? '',
-              sourceColor: current[i]?.sourceColor ?? groups[i]?.sourceColor ?? '#2fe3b5',
-            }))
-          : current.length <= 1
-            ? [{
-                toolIndex: 0,
-                grams: total,
-                spoolId: current[0]?.spoolId ?? '',
-                sourceColor: current[0]?.sourceColor ?? '#2fe3b5',
-              }]
-            // The file has colour groups but the slice used one tool: keep the
-            // groups and split the sliced total across them by share.
-            : current.map((lane, i) => ({
-                ...lane,
-                grams: Math.round(total * (groups[i]?.share ?? 1 / current.length) * 10) / 10,
-              })),
-      );
+      setSlice(fresh);
+      setSliceOrigin('new');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSlicing(null);
     }
-  }, [mesh, source, printer, printerId, bed, groups]);
+  }
 
-  /**
-   * Slice as soon as there is something to slice, and again when the printer
-   * changes, because the machine profile decides the answer.
-   *
-   * There is no cheaper number to show in the meantime, so waiting for this is
-   * the whole interaction rather than an optional extra step.
-   */
+  const colourFor = useCallback((index: number) =>
+    build?.colours?.[index]?.hex ?? groups[index]?.sourceColor ?? FALLBACK_COLOUR,
+  [build, groups]);
+
+  // Lanes follow the slice: one per filament it used, keeping spool choices.
   useEffect(() => {
-    if (!mesh || !source || !setupReady) return;
-    void runSlice();
-    // runSlice is deliberately not a dependency: it changes whenever the colour
-    // groups do, and re-slicing because a slice reported its own colours would
-    // never settle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mesh, source, printerId, setupReady]);
+    if (!slice) { setLanes([]); return; }
+    const tools = slice.per_tool.length > 0
+      ? slice.per_tool
+      : [{ tool: 0, total_g: Number(slice.total_grams), ...NO_WASTE }];
+    setLanes((current) => tools.map((t, i) => ({
+      toolIndex: t.tool,
+      grams: Number(t.total_g),
+      waste: {
+        purge_g: Number(t.purge_g) || 0,
+        support_g: Number(t.support_g) || 0,
+        skirt_brim_g: Number(t.skirt_brim_g) || 0,
+        prime_line_g: Number(t.prime_line_g) || 0,
+      },
+      spoolId: current[i]?.spoolId ?? '',
+      sourceColor: FALLBACK_COLOUR,
+    })));
+  }, [slice]);
+
+  // Colours arrive after the preview loads. Only the swatch follows them —
+  // rebuilding the lanes here would throw away weights the operator edited.
+  useEffect(() => {
+    setLanes((current) => current.map((lane) => ({ ...lane, sourceColor: colourFor(lane.toolIndex) })));
+  }, [colourFor, slice]);
+
+  async function acceptFile(file: File) {
+    setError(null);
+    const buffer = await file.arrayBuffer();
+    const sha = await sha256Hex(buffer);
+    setDropped({ buffer, filename: file.name, sha });
+    // A file the studio already sent is recognised by its content, whatever
+    // it is called on this computer.
+    const known = builds.find((b) => b.file_sha256 === sha);
+    setBuildId(known?.id ?? '');
+  }
 
   const qty = Math.max(Number(quantity) || 1, 1);
 
-  /** Drives the visualizer: a lane painted with its chosen spool's colour. */
   const colorOverrides = useMemo(() => {
     const out: Record<number, string> = {};
     lanes.forEach((lane, index) => {
-      const spool = spools.find((s) => s.id === lane.spoolId);
-      const hex = spool?.product?.color_hex;
+      const hex = spools.find((s) => s.id === lane.spoolId)?.product?.color_hex;
       if (hex) out[index] = hex;
     });
     return out;
@@ -254,25 +285,21 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
   }
 
   const totalGrams = lanes.reduce((sum, l) => sum + l.grams, 0) * qty;
-
   const shortfalls = lanes.flatMap((lane) => {
     const spool = spools.find((s) => s.id === lane.spoolId);
     if (!spool) return [];
     const short = lane.grams * qty - Number(spool.remaining_grams);
     return short > 0 ? [{ code: spool.code, short }] : [];
   });
-
   const unassigned = lanes.filter((l) => !l.spoolId && l.grams > 0).length;
+  const title = mode === 'library' ? model?.name : build?.title ?? dropped?.filename.replace(/\.[^.]+$/, '');
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!activeOrg || lanes.length === 0) return;
+    if (!activeOrg || lanes.length === 0 || !slice) return;
     setBusy(true);
     setError(null);
 
-    // Checked before anything is written: a job row with no material rows has
-    // an estimate of 0 and silently no-ops every stock movement, so it must
-    // never be created in the first place.
     const usable = lanes.filter((l) => l.spoolId && l.grams > 0);
     if (usable.length === 0) {
       setError('Assign a spool to at least one colour before queuing the job.');
@@ -281,27 +308,39 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
     }
 
     try {
-      const { data: code, error: codeErr } = await supabase.rpc('next_job_code', {
-        p_org: activeOrg.id,
-      });
+      let customBuildId: string | null = mode === 'custom' ? buildId || null : null;
+      // A dropped file nobody has seen before becomes a build here — its
+      // description and slice are kept; the file is not.
+      if (mode === 'custom' && !customBuildId && dropped) {
+        const { data, error: buildErr } = await supabase.from('custom_builds').insert({
+          organization_id: activeOrg.id,
+          source: 'manual',
+          title: title || 'Custom build',
+          file_name: dropped.filename,
+          file_sha256: dropped.sha,
+          colours: lanes.map((l) => ({ hex: l.sourceColor })),
+        }).select().single();
+        if (buildErr) throw new Error(buildErr.message);
+        customBuildId = (data as CustomBuild).id;
+      }
+
+      const { data: code, error: codeErr } = await supabase.rpc('next_job_code', { p_org: activeOrg.id });
       if (codeErr) throw new Error(codeErr.message);
 
-      const { data: job, error: jobErr } = await supabase
-        .from('print_jobs')
-        .insert({
-          organization_id: activeOrg.id,
-          code,
-          model_version_id: version?.id ?? null,
-          printer_id: printerId || null,
-          quantity: qty,
-          estimated_seconds: (estimate?.seconds ?? 0) * qty,
-          notes: model?.name ?? null,
-        })
-        .select()
-        .single();
+      const { data: job, error: jobErr } = await supabase.from('print_jobs').insert({
+        organization_id: activeOrg.id,
+        code,
+        model_version_id: mode === 'library' ? version?.id ?? null : null,
+        custom_build_id: customBuildId,
+        slice_result_id: slice.id,
+        printer_id: printerId || null,
+        quantity: qty,
+        estimated_seconds: slice.print_seconds * qty,
+        notes: title ?? null,
+      }).select().single();
       if (jobErr) throw new Error(jobErr.message);
 
-      // The trigger on this table is what fills the job's own estimated_grams.
+      // The trigger on this table fills the job's own totals, waste included.
       const { error: matErr } = await supabase.from('print_job_materials').insert(
         usable.map((l, i) => ({
           organization_id: activeOrg.id,
@@ -309,10 +348,15 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
           spool_id: l.spoolId,
           tool_index: i,
           estimated_grams: l.grams * qty,
+          estimated_waste: toolWasteForJob(l.waste, qty),
         })),
       );
       if (matErr) throw new Error(matErr.message);
 
+      if (customBuildId) {
+        await supabase.from('custom_builds').update({ status: 'queued' })
+          .eq('id', customBuildId).eq('status', 'new');
+      }
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -321,32 +365,56 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
     }
   }
 
+  const waste = slice?.waste ?? {};
+  const shownWaste = WASTE_KINDS.filter((k) => Number(waste[`${k}_g`] ?? 0) > 0);
+  const share = slice ? wastePercent(slice) : null;
+  const ready = mode === 'library' ? Boolean(model) : Boolean(target);
+
   return (
-    // Capped against the viewport so the dialog never exceeds the window.
     <Modal title="New print job" onClose={onClose} width="w-[min(900px,92vw)]">
       <form onSubmit={submit} className="space-y-4">
         <ErrorNote message={error} />
 
+        <div className="flex gap-1 rounded-lg border border-line p-1" role="tablist">
+          {(['library', 'custom'] as Mode[]).map((m) => (
+            <button key={m} type="button" role="tab" aria-selected={mode === m}
+                    onClick={() => { setMode(m); setSlice(null); setLanes([]); }}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-xs transition-colors ${
+                      mode === m ? 'bg-mint/10 text-mint' : 'text-slate-500 hover:text-slate-300'}`}>
+              {m === 'library' ? 'Model from the library' : 'Custom one-off'}
+            </button>
+          ))}
+        </div>
+
         <div className="grid gap-4 lg:grid-cols-3">
-          <Field label="Model">
-            <select className="field" value={modelId} onChange={(e) => {
-              setModelId(e.target.value);
-              setEstimate(null);
-              setLanes([]);
-            }}>
-              <option value="">Choose a model…</option>
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                  {m.versions.length > 0
-                    ? ` · v${Math.max(...m.versions.map((v) => v.version))}` : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {mode === 'library' ? (
+            <Field label="Model">
+              <select className="field" value={modelId}
+                      onChange={(e) => { setModelId(e.target.value); setSlice(null); setLanes([]); }}>
+                <option value="">Choose a model…</option>
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                    {m.versions.length > 0 ? ` · v${Math.max(...m.versions.map((v) => v.version))}` : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : (
+            <Field label="Build">
+              <select className="field" value={buildId}
+                      onChange={(e) => { setBuildId(e.target.value); setSlice(null); setLanes([]); }}>
+                <option value="">{dropped ? `New: ${dropped.filename}` : 'Choose a build, or drop a file…'}</option>
+                {builds.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.title} · {CUSTOM_BUILD_SOURCE_LABELS[b.source]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Printer">
-            <select className="field" value={printerId}
-                    onChange={(e) => setPrinterId(e.target.value)}>
+            <select className="field" value={printerId} onChange={(e) => setPrinterId(e.target.value)}>
               <option value="">Unassigned</option>
               {printers.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -361,18 +429,55 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
           </Field>
         </div>
 
-        {model && (
+        {(ready || mode === 'custom') && (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="min-w-0">
-              {mesh ? (
-                <Visualizer
-                  buffer={mesh.buffer}
-                  filename={mesh.filename}
-                  bed={bed}
-                  colorOverrides={colorOverrides}
-                  onGroups={handleGroups}
-                  height={340}
-                />
+              {preview ? (
+                <Visualizer buffer={preview.buffer} filename={preview.filename} bed={bed}
+                            colorOverrides={colorOverrides} onGroups={setGroups} height={340} />
+              ) : mode === 'custom' ? (
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const file = e.dataTransfer.files[0];
+                    if (file) void acceptFile(file);
+                  }}
+                  onClick={() => fileInput.current?.click()}
+                  className="grid h-[340px] cursor-pointer place-items-center rounded-lg border-2
+                             border-dashed border-line bg-ink-950/50 px-6 text-center
+                             transition-colors hover:border-mint/40"
+                >
+                  <div>
+                    {build && (
+                      <>
+                        <p className="text-sm font-medium text-slate-200">{build.title}</p>
+                        <div className="mt-2 flex justify-center gap-1.5">
+                          {build.colours.map((c, i) => (
+                            <span key={i} className="h-4 w-4 rounded-full border border-white/20"
+                                  style={{ background: c.hex }} title={c.name ?? c.hex} />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    <p className="mt-3 text-sm text-slate-400">
+                      {build && slice
+                        ? 'Sliced already. Drop its file only if you want to re-slice.'
+                        : build
+                          ? `Drop ${build.file_name ?? 'its file'} to slice it once.`
+                          : 'Drop an STL or 3MF, or click to choose.'}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      The file is sliced and its numbers kept. The file itself is never stored.
+                    </p>
+                  </div>
+                  <input ref={fileInput} type="file" accept=".3mf,.stl,.obj" className="hidden"
+                         onChange={(e) => {
+                           const file = e.target.files?.[0];
+                           if (file) void acceptFile(file);
+                           e.target.value = '';
+                         }} />
+                </div>
               ) : (
                 <div className="grid h-[340px] place-items-center rounded-lg border border-line
                                 bg-ink-950/50 text-xs text-slate-600">
@@ -385,77 +490,100 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
               <div className="rounded-lg border border-line bg-ink-950/50 p-4">
                 <div className="flex items-center justify-between gap-2">
                   <p className="label mb-0">Estimate</p>
-                  <button type="button" onClick={() => void runSlice()}
-                          disabled={!mesh || slicing !== null}
-                          title="Runs again with the current printer and settings"
+                  <button type="button" onClick={() => void reslice()}
+                          disabled={!target?.buffer || slicing !== null || !setupReady}
+                          title={target?.buffer
+                            ? 'Slice again and replace the stored result'
+                            : 'Re-slicing needs the file, which is not kept'}
                           className="btn-ghost px-3 py-1.5 text-xs">
-                    {slicing ?? 'Re-slice'}
+                    {slicing === 'Slicing…' ? 'Slicing…' : 'Re-slice'}
                   </button>
                 </div>
 
                 <div className="mt-3 flex items-baseline gap-5">
                   <div>
                     <p className="tabular text-xl font-semibold text-slate-100">
-                      {estimate ? <Grams value={totalGrams} />
-                        : <span className="text-slate-600">—</span>}
+                      {slice ? <Grams value={totalGrams} /> : <span className="text-slate-600">—</span>}
                     </p>
-                    <p className="text-[11px] text-slate-500">material</p>
+                    <p className="text-[11px] text-slate-500">filament used</p>
                   </div>
                   <div>
                     <p className="tabular text-xl font-semibold text-slate-100">
-                      {estimate
-                        ? formatDuration(estimate.seconds * qty)
+                      {slice ? formatDuration(slice.print_seconds * qty)
                         : <span className="text-slate-600">—</span>}
                     </p>
                     <p className="text-[11px] text-slate-500">print time</p>
                   </div>
                 </div>
 
-                {!estimate && (
+                {slice && (
+                  <div className="mt-3 space-y-1 border-t border-line pt-3 text-xs">
+                    <div className="flex justify-between text-slate-400">
+                      <span>In the part</span>
+                      <span className="tabular"><Grams value={Number(slice.product_grams) * qty} /></span>
+                    </div>
+                    {shownWaste.length === 0 ? (
+                      <div className="flex justify-between text-slate-500">
+                        <span>Waste</span><span>none</span>
+                      </div>
+                    ) : shownWaste.map((kind) => (
+                      <div key={kind} className="flex justify-between text-amber-300/90">
+                        <span>
+                          {WASTE_KIND_LABELS[kind]}
+                          {kind === 'purge' && slice.tool_changes > 0
+                            && ` · ${slice.tool_changes} change${slice.tool_changes === 1 ? '' : 's'}`}
+                        </span>
+                        <span className="tabular">
+                          <Grams value={Number(waste[`${kind}_g`]) * qty} />
+                        </span>
+                      </div>
+                    ))}
+                    {share !== null && share > 0 && (
+                      <p className="pt-1 text-[11px] text-slate-500">
+                        {share}% of the filament never ends up in the part.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {!slice && (
                   <p className="mt-2 text-xs text-slate-500">
                     {slicing
-                      ? 'Slicing for the real weight and time…'
+                      ? slicing
                       : !setupReady
-                        // Say why rather than show a failure: the slicer is on
-                        // its way, and this job will slice once it lands.
                         ? `${describeSetup(setup) ?? 'Setting up the slicer'}. This job slices as soon as it is ready.`
-                        : mesh
-                          ? 'No figure yet. Re-slice, or check the engine on Settings → Slicer.'
-                          : 'Choose a model to slice.'}
+                        : mode === 'custom' && target && !target.buffer
+                          ? 'Not sliced yet. Drop the file to slice it once.'
+                          : target
+                            ? 'No figure yet. Re-slice, or check the engine on Settings → Slicer.'
+                            : 'Choose something to print.'}
                   </p>
                 )}
 
-                {estimate && (
-                  <>
-                    <div className="mt-2">
-                      <Badge tone={
-                        estimate.confidence === 'HIGH' ? 'mint'
-                          : estimate.confidence === 'LOW' ? 'amber' : 'slate'
-                      }>
-                        Sliced · {estimate.confidence}
-                      </Badge>
-                    </div>
-                    <p className="mt-2 break-words text-xs text-slate-500">{estimate.detail}</p>
-                  </>
+                {slice && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Badge tone={slice.confidence === 'HIGH' ? 'mint'
+                      : slice.confidence === 'LOW' ? 'amber' : 'slate'}>
+                      {sliceOrigin === 'stored' ? 'Stored slice' : 'Sliced now'} · {slice.confidence}
+                    </Badge>
+                    <span className="text-[11px] text-slate-600">
+                      {new Date(slice.sliced_at).toLocaleString(undefined,
+                        { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
                 )}
               </div>
 
               <div className="rounded-lg border border-line bg-ink-950/50 p-4">
                 <div className="flex items-center justify-between">
-                  <p className="label mb-0">
-                    {lanes.length > 1 ? `${lanes.length} colours` : 'Filament'}
-                  </p>
+                  <p className="label mb-0">{lanes.length > 1 ? `${lanes.length} colours` : 'Filament'}</p>
                   {printer && printer.color_slots > 1 && (
-                    <span className="shrink-0 text-[11px] text-slate-600">
-                      {printer.color_slots} slots
-                    </span>
+                    <span className="shrink-0 text-[11px] text-slate-600">{printer.color_slots} slots</span>
                   )}
                 </div>
 
                 {lanes.length === 0 ? (
-                  <p className="mt-3 text-xs text-slate-500">
-                    Colours appear once the model loads.
-                  </p>
+                  <p className="mt-3 text-xs text-slate-500">Colours appear once it is sliced.</p>
                 ) : (
                   <div className="mt-3 space-y-3">
                     {lanes.map((lane, index) => {
@@ -463,20 +591,15 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
                       const swatch = spool?.product?.color_hex ?? lane.sourceColor;
                       const need = lane.grams * qty;
                       const short = spool ? need - Number(spool.remaining_grams) : 0;
+                      const laneWaste = Object.values(lane.waste).reduce((a, b) => a + b, 0) * qty;
                       return (
                         <div key={index} className="space-y-1.5">
                           <div className="flex items-center gap-2">
-                            <span
-                              className="h-4 w-4 shrink-0 rounded border border-white/20"
-                              style={{ background: swatch }}
-                              aria-hidden="true"
-                            />
-                            <select
-                              className="field flex-1 py-1.5 text-xs"
-                              value={lane.spoolId}
-                              onChange={(e) => assign(index, e.target.value)}
-                              aria-label={`Spool for colour ${index + 1}`}
-                            >
+                            <span className="h-4 w-4 shrink-0 rounded border border-white/20"
+                                  style={{ background: swatch }} aria-hidden="true" />
+                            <select className="field flex-1 py-1.5 text-xs" value={lane.spoolId}
+                                    onChange={(e) => assign(index, e.target.value)}
+                                    aria-label={`Spool for colour ${index + 1}`}>
                               <option value="">Choose a spool…</option>
                               {spools.map((s) => (
                                 <option key={s.id} value={s.id}>
@@ -487,22 +610,16 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
                             </select>
                           </div>
                           <div className="flex items-center gap-2 pl-6">
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              className="field w-24 py-1 text-xs"
-                              value={lane.grams}
-                              onChange={(e) => setLaneGrams(index, Number(e.target.value) || 0)}
-                              aria-label={`Grams for colour ${index + 1}`}
-                            />
+                            <input type="number" step="0.1" min="0" className="field w-24 py-1 text-xs"
+                                   value={lane.grams}
+                                   onChange={(e) => setLaneGrams(index, Number(e.target.value) || 0)}
+                                   aria-label={`Grams for colour ${index + 1}`} />
                             <span className="text-[11px] text-slate-600">
-                              g each · {need.toFixed(0)} g total
+                              g each · {need.toFixed(1)} g
+                              {laneWaste > 0 && ` (${laneWaste.toFixed(1)} waste)`}
                             </span>
                             {short > 0 && (
-                              <span className="ml-auto text-[11px] text-red-400">
-                                {short.toFixed(0)} g short
-                              </span>
+                              <span className="ml-auto text-[11px] text-red-400">{short.toFixed(0)} g short</span>
                             )}
                           </div>
                         </div>
@@ -515,12 +632,12 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
           </div>
         )}
 
-        {model && estimate && (
+        {slice && (
           <JobAdvisor
-            modelId={model.id}
+            modelId={mode === 'library' ? model?.id ?? null : null}
             printerId={printerId || null}
             quantity={qty}
-            unitSeconds={estimate.seconds}
+            unitSeconds={slice.print_seconds}
             unitGrams={lanes.reduce((sum, l) => sum + l.grams, 0)}
             maxPerPlate={10}
           />
@@ -534,8 +651,7 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
           </div>
         )}
         {unassigned > 0 && shortfalls.length === 0 && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3
-                          text-sm text-amber-300">
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
             {unassigned} colour{unassigned > 1 ? 's have' : ' has'} no spool yet. A job with no
             spool assigned reserves and consumes nothing, so its material never reaches the
             ledger — pick a spool for every colour before queuing it.
@@ -544,11 +660,8 @@ export function NewJobModal({ onClose, onSaved }: { onClose: () => void; onSaved
 
         <div className="modal-actions">
           <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
-          {/* Unassigned colours are blocked, not warned about: a job that
-              cannot move stock is one the ledger can never account for. */}
           <button type="submit"
-                  disabled={busy || !model || lanes.length === 0 || !estimate
-                            || unassigned > 0 || shortfalls.length > 0}
+                  disabled={busy || !slice || lanes.length === 0 || unassigned > 0 || shortfalls.length > 0}
                   className="btn-primary">
             {busy ? 'Queuing…' : 'Queue job'}
           </button>

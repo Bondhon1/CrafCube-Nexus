@@ -36,6 +36,8 @@ import { Calibration } from '@/pages/printers/Calibration';
 import { Slicer } from '@/pages/settings/Slicer';
 import { Notifications } from '@/pages/settings/Notifications';
 import { Storage } from '@/pages/settings/Storage';
+import { Integrations } from '@/pages/settings/Integrations';
+import { CustomBuilds } from '@/pages/models/CustomBuilds';
 import { NAVIGATION } from '@/app/navigation';
 import { WindowControls } from '@/components/WindowControls';
 import { Atmosphere } from '@/components/Atmosphere';
@@ -101,6 +103,8 @@ const IMPLEMENTED = new Set([
   '/settings/slicer',
   '/settings/notifications',
   '/settings/storage',
+  '/settings/integrations',
+  '/models/custom',
 ]);
 
 function Shell() {
@@ -175,6 +179,8 @@ function Shell() {
             <Route path="/settings/slicer" element={<Slicer />} />
             <Route path="/settings/notifications" element={<Notifications />} />
             <Route path="/settings/storage" element={<Storage />} />
+            <Route path="/settings/integrations" element={<Integrations />} />
+            <Route path="/models/custom" element={<CustomBuilds />} />
             <Route path="/analytics/products" element={
               <Analytics view="products" title="Product analytics"
                          subtitle="Which products earn, using the cost snapshotted on each sale." />
