@@ -93,6 +93,8 @@ export const CUSTOM_BUILD_SOURCE_LABELS: Record<CustomBuildSource, string> = {
 export interface CustomBuild {
   id: UUID;
   organization_id: UUID;
+  /** The custom design - and so the product code - this build is one of. */
+  design_id: UUID;
   source: CustomBuildSource;
   external_id: string | null;
   title: string;

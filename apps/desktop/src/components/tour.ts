@@ -57,8 +57,8 @@ export const TOUR: TourStop[] = [
     route: '/models/upload',
     target: 'model-drop',
     title: 'Drop a model here',
-    text: 'STL or 3MF. The app measures it, renders a preview and finds how many '
-        + 'colours it uses. Weight and time come later, from slicing the job.',
+    text: 'STL or 3MF. It gets the next product code (C0001…), which orders are '
+        + 'taken by. Weight and time come later, from slicing the job.',
   },
   {
     id: 'job',
@@ -73,8 +73,8 @@ export const TOUR: TourStop[] = [
     route: '/sales/orders',
     target: 'order-new',
     title: 'Take an order',
-    text: 'One line per item, linked to a product where you can. Use Payment on a '
-        + 'row when money arrives — the total is not revenue until then.',
+    text: 'Type a product code on each line: a library model, or a custom design '
+        + 'and which build. Use Payment when money arrives.',
   },
   {
     id: 'expense',

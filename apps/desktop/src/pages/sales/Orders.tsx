@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
-  Customer, OrderBalance, OrderItem, OrderStatus, PaymentMethod, Product,
+  CatalogEntry, CustomBuild, Customer, OrderBalance, OrderItem, OrderStatus, PaymentMethod, Product,
 } from '@crafcube/types';
 import {
-  NEXT_ORDER_STATUSES, ORDER_STATUS_LABELS, PAYMENT_METHOD_LABELS, paymentState,
+  findByCode, normalizeProductCode, NEXT_ORDER_STATUSES, ORDER_STATUS_LABELS, PAYMENT_METHOD_LABELS, paymentState,
 } from '@crafcube/types';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/app/SessionProvider';
@@ -177,23 +177,31 @@ export function Orders() {
 }
 
 interface DraftLine {
-  /** Empty for a one-off line; set links the sale to product profitability. */
-  productId: string;
+  /** The product code the line is sold by. Blank for a one-off line. */
+  code: string;
+  /** For a custom design: which customer's build, if it exists yet. */
+  buildId: string;
   description: string;
+  /** What the code filled in, so a new code replaces it but a typed description is kept. */
+  autoDescription: string;
   quantity: string;
   unitPrice: string;
   unitCost: string;
 }
 
 const EMPTY_LINE: DraftLine = {
-  productId: '', description: '', quantity: '1', unitPrice: '', unitCost: '',
+  code: '', buildId: '', description: '', autoDescription: '', quantity: '1', unitPrice: '', unitCost: '',
 };
+
+type BuildOption = Pick<CustomBuild, 'id' | 'design_id' | 'title'>;
 
 function OrderModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const { activeOrg } = useSession();
   const currency = activeOrg?.currency ?? '';
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [builds, setBuilds] = useState<BuildOption[]>([]);
   const [customerId, setCustomerId] = useState('');
   const [discount, setDiscount] = useState('0');
   const [delivery, setDelivery] = useState('0');
@@ -210,6 +218,13 @@ function OrderModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
     void supabase.from('products').select('*').eq('organization_id', activeOrg.id)
       .eq('active', true).order('name')
       .then(({ data }) => setProducts((data ?? []) as Product[]));
+    void supabase.from('product_catalog').select('*').eq('organization_id', activeOrg.id)
+      .eq('archived', false).order('product_code')
+      .then(({ data }) => setCatalog((data ?? []) as CatalogEntry[]));
+    void supabase.from('custom_builds').select('id, design_id, title')
+      .eq('organization_id', activeOrg.id).neq('status', 'archived')
+      .order('created_at', { ascending: false }).limit(500)
+      .then(({ data }) => setBuilds((data ?? []) as BuildOption[]));
   }, [activeOrg]);
 
   const subtotal = lines.reduce(
@@ -225,26 +240,53 @@ function OrderModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
     setLines((current) => current.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   }
 
-  /** Picking a product fills the line, but every field stays editable — the
-   *  list price is a starting point, not something the operator is stuck with. */
-  function pickProduct(index: number, productId: string) {
-    const product = products.find((p) => p.id === productId);
-    if (!product) {
-      setLine(index, { productId: '' });
-      return;
-    }
+  /** The product a library model sells as, for its list price and profitability. */
+  function productFor(entry: CatalogEntry | undefined): Product | undefined {
+    return entry?.model_id ? products.find((p) => p.model_id === entry.model_id) : undefined;
+  }
+
+  function keepsTypedDescription(line: DraftLine): boolean {
+    return line.description.trim() !== '' && line.description !== line.autoDescription;
+  }
+
+  /** Typing a code fills the line; every field stays editable afterwards. */
+  function typeCode(index: number, code: string) {
+    const line = lines[index];
+    const entry = findByCode(catalog, code);
+    const auto = entry?.name ?? '';
     setLine(index, {
-      productId,
-      description: lines[index].description.trim() || product.name,
-      unitPrice: lines[index].unitPrice || (product.list_price ?? '').toString(),
+      code,
+      buildId: '',
+      autoDescription: auto,
+      description: keepsTypedDescription(line) ? line.description : auto,
+      unitPrice: line.unitPrice || (productFor(entry)?.list_price ?? '').toString(),
+    });
+  }
+
+  function pickBuild(index: number, buildId: string) {
+    const line = lines[index];
+    const entry = findByCode(catalog, line.code);
+    const build = builds.find((b) => b.id === buildId);
+    const auto = build && entry ? `${entry.name} — ${build.title}` : entry?.name ?? '';
+    setLine(index, {
+      buildId,
+      autoDescription: auto,
+      description: keepsTypedDescription(line) ? line.description : auto,
     });
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!activeOrg) return;
-    setBusy(true);
     setError(null);
+
+    const usable = lines.filter((l) => (l.description.trim() || l.code.trim()) && Number(l.quantity) > 0);
+    const unknown = usable.find((l) => l.code.trim() && !findByCode(catalog, l.code));
+    if (unknown) {
+      setError(`No product has the code ${normalizeProductCode(unknown.code)}.`);
+      return;
+    }
+    setBusy(true);
 
     try {
       const { data: code, error: codeErr } = await supabase.rpc('next_order_code', {
@@ -267,18 +309,23 @@ function OrderModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
         .single();
       if (orderErr) throw new Error(orderErr.message);
 
-      const usable = lines.filter((l) => l.description.trim() && Number(l.quantity) > 0);
       if (usable.length > 0) {
         const { error: itemErr } = await supabase.from('order_items').insert(
-          usable.map((l) => ({
-            organization_id: activeOrg.id,
-            order_id: (order as { id: string }).id,
-            product_id: l.productId || null,
-            description: l.description.trim(),
-            quantity: Number(l.quantity) || 1,
-            unit_price: Number(l.unitPrice) || 0,
-            unit_cost: Number(l.unitCost) || 0,
-          } satisfies Partial<OrderItem> & { organization_id: string; order_id: string })),
+          usable.map((l) => {
+            const entry = findByCode(catalog, l.code);
+            return {
+              organization_id: activeOrg.id,
+              order_id: (order as { id: string }).id,
+              // The database resolves the code to its model or design.
+              product_code: normalizeProductCode(l.code),
+              product_id: productFor(entry)?.id ?? null,
+              custom_build_id: entry?.kind === 'custom' ? l.buildId || null : null,
+              description: l.description.trim() || entry?.name || 'Item',
+              quantity: Number(l.quantity) || 1,
+              unit_price: Number(l.unitPrice) || 0,
+              unit_cost: Number(l.unitCost) || 0,
+            } satisfies Partial<OrderItem> & { organization_id: string; order_id: string };
+          }),
         );
         if (itemErr) throw new Error(itemErr.message);
       }
@@ -290,8 +337,10 @@ function OrderModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
     }
   }
 
+  const columns = 'grid grid-cols-[96px_minmax(0,1fr)_56px_84px_84px_28px] gap-2';
+
   return (
-    <Modal title="New order" onClose={onClose} width="w-[min(700px,92vw)]">
+    <Modal title="New order" onClose={onClose} width="w-[min(760px,92vw)]">
       <form onSubmit={submit} className="space-y-4">
         <ErrorNote message={error} />
 
@@ -318,55 +367,99 @@ function OrderModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
             </button>
           </div>
 
-          <div className="mt-3 space-y-2">
-            {lines.map((line, index) => (
-              <div key={index}
-                   className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_56px_84px_84px_28px] items-center gap-2">
-                <select
-                  className="field py-1.5 text-xs" value={line.productId}
-                  onChange={(e) => pickProduct(index, e.target.value)}
-                  aria-label={`Item ${index + 1} product`}
-                >
-                  <option value="">One-off</option>
-                  {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <input
-                  className="field py-1.5 text-xs" placeholder="Dragon — Black PLA"
-                  value={line.description}
-                  onChange={(e) => setLine(index, { description: e.target.value })}
-                  aria-label={`Item ${index + 1} description`}
-                />
-                <input
-                  type="number" min="1" className="field py-1.5 text-xs" value={line.quantity}
-                  onChange={(e) => setLine(index, { quantity: e.target.value })}
-                  aria-label={`Item ${index + 1} quantity`}
-                />
-                <input
-                  type="number" step="0.01" min="0" className="field py-1.5 text-xs"
-                  placeholder="price" value={line.unitPrice}
-                  onChange={(e) => setLine(index, { unitPrice: e.target.value })}
-                  aria-label={`Item ${index + 1} unit price`}
-                />
-                <input
-                  type="number" step="0.01" min="0" className="field py-1.5 text-xs"
-                  placeholder="cost" value={line.unitCost}
-                  onChange={(e) => setLine(index, { unitCost: e.target.value })}
-                  aria-label={`Item ${index + 1} unit cost`}
-                />
-                <button
-                  type="button" aria-label={`Remove item ${index + 1}`}
-                  onClick={() => setLines((c) => c.filter((_, i) => i !== index))}
-                  disabled={lines.length === 1}
-                  className="text-slate-600 transition-colors hover:text-red-400 disabled:opacity-30"
-                >
-                  ×
-                </button>
-              </div>
+          {/* Suggestions as a code is typed: C00 lists every C00xx with its name. */}
+          <datalist id="product-codes">
+            {catalog.map((c) => (
+              <option key={c.product_code} value={c.product_code}>
+                {c.name}{c.kind === 'custom' ? ' (custom)' : ''}
+              </option>
             ))}
+          </datalist>
+
+          <div className={`mt-3 ${columns} text-[11px] uppercase tracking-wide text-slate-600`}>
+            <span>Code</span><span>Description</span><span>Qty</span><span>Price</span><span>Cost</span><span />
+          </div>
+
+          <div className="mt-1 space-y-2">
+            {lines.map((line, index) => {
+              const entry = findByCode(catalog, line.code);
+              const typed = line.code.trim() !== '';
+              const designBuilds = entry?.kind === 'custom'
+                ? builds.filter((b) => b.design_id === entry.custom_design_id)
+                : [];
+              return (
+                <div key={index}>
+                  <div className={`${columns} items-center`}>
+                    <input
+                      list="product-codes"
+                      className={`field py-1.5 font-mono text-xs uppercase ${
+                        typed && !entry ? 'border-red-500/60' : ''}`}
+                      placeholder="C0001" value={line.code}
+                      onChange={(e) => typeCode(index, e.target.value)}
+                      aria-label={`Item ${index + 1} product code`}
+                    />
+                    <input
+                      className="field py-1.5 text-xs" placeholder={typed ? '' : 'One-off item'}
+                      value={line.description}
+                      onChange={(e) => setLine(index, { description: e.target.value })}
+                      aria-label={`Item ${index + 1} description`}
+                    />
+                    <input
+                      type="number" min="1" className="field py-1.5 text-xs" value={line.quantity}
+                      onChange={(e) => setLine(index, { quantity: e.target.value })}
+                      aria-label={`Item ${index + 1} quantity`}
+                    />
+                    <input
+                      type="number" step="0.01" min="0" className="field py-1.5 text-xs"
+                      placeholder="price" value={line.unitPrice}
+                      onChange={(e) => setLine(index, { unitPrice: e.target.value })}
+                      aria-label={`Item ${index + 1} unit price`}
+                    />
+                    <input
+                      type="number" step="0.01" min="0" className="field py-1.5 text-xs"
+                      placeholder="cost" value={line.unitCost}
+                      onChange={(e) => setLine(index, { unitCost: e.target.value })}
+                      aria-label={`Item ${index + 1} unit cost`}
+                    />
+                    <button
+                      type="button" aria-label={`Remove item ${index + 1}`}
+                      onClick={() => setLines((c) => c.filter((_, i) => i !== index))}
+                      disabled={lines.length === 1}
+                      className="text-slate-600 transition-colors hover:text-red-400 disabled:opacity-30"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {typed && (
+                    <div className="mt-1 flex flex-wrap items-center gap-2 pl-1 text-[11px]">
+                      {!entry && <span className="text-red-400">No product has this code.</span>}
+                      {entry?.kind === 'model' && (
+                        <span className="text-slate-500">{entry.name} · library model</span>
+                      )}
+                      {entry?.kind === 'custom' && (
+                        <>
+                          <span className="text-slate-500">{entry.name} · custom design</span>
+                          <select
+                            className="rounded-md border border-line bg-ink-950 px-2 py-0.5 text-[11px]"
+                            value={line.buildId} onChange={(e) => pickBuild(index, e.target.value)}
+                            aria-label={`Item ${index + 1} build`}
+                          >
+                            <option value="">Build not made yet</option>
+                            {designBuilds.map((b) => (
+                              <option key={b.id} value={b.id}>{b.title}</option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
           <p className="mt-2 text-[11px] text-slate-600">
-            Unit cost comes from a quote and is stored on the line, so profit stays true even
-            after prices change.
+            Type a product code to fill the line, or leave it blank for a one-off. Unit cost is
+            stored on the line, so profit stays true even after prices change.
           </p>
         </div>
 

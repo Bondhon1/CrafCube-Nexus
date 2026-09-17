@@ -8,7 +8,7 @@ import {
   PageHeader, Panel, Row, Table, Td, Th,
 } from '@/components/ui';
 
-interface ModelOption { id: string; name: string }
+interface ModelOption { id: string; name: string; product_code: string }
 
 export function Products() {
   const { activeOrg, can } = useSession();
@@ -126,8 +126,8 @@ function ProductModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
 
   useEffect(() => {
     if (!activeOrg) return;
-    void supabase.from('models').select('id, name').eq('organization_id', activeOrg.id)
-      .order('name').limit(200)
+    void supabase.from('models').select('id, name, product_code').eq('organization_id', activeOrg.id)
+      .order('product_code').limit(500)
       .then(({ data }) => setModels((data ?? []) as ModelOption[]));
   }, [activeOrg]);
 
@@ -171,7 +171,7 @@ function ProductModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
         <Field label="Model" hint="Links the product to the file it is printed from.">
           <select className="field" value={modelId} onChange={(e) => setModelId(e.target.value)}>
             <option value="">None</option>
-            {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {models.map((m) => <option key={m.id} value={m.id}>{m.product_code} · {m.name}</option>)}
           </select>
         </Field>
         <Field label="Description">

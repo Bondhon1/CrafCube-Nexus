@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { DuplicateFile, GenerationMethod, Model, ModelLicense } from '@crafcube/types';
 import {
   GENERATION_METHODS, GENERATION_METHOD_LABELS,
-  MODEL_LICENSES, MODEL_LICENSE_LABELS,
+  MODEL_LICENSES, MODEL_LICENSE_LABELS, isProductCode, normalizeProductCode,
 } from '@crafcube/types';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/app/SessionProvider';
@@ -37,6 +37,7 @@ export function Upload() {
   const [dragging, setDragging] = useState(false);
 
   const [name, setName] = useState('');
+  const [productCode, setProductCode] = useState('');
   const [category, setCategory] = useState('');
   const [method, setMethod] = useState<GenerationMethod>('manual');
   const [tool, setTool] = useState('');
@@ -75,6 +76,9 @@ export function Upload() {
       .eq('archived', false)
       .order('name')
       .then(({ data }) => setModels((data ?? []) as Model[]));
+    // A suggestion; whatever is typed over it is what gets saved.
+    void supabase.rpc('next_product_code', { p_org: activeOrg.id })
+      .then(({ data }) => { if (typeof data === 'string') setProductCode((c) => c || data); });
   }, [activeOrg]);
 
   const accept = useCallback(async (picked: File) => {
@@ -155,12 +159,17 @@ export function Upload() {
       let modelId = targetModelId;
 
       if (!modelId) {
+        if (productCode.trim() && !isProductCode(productCode)) {
+          throw new Error('A product code is 1-4 letters then 3-6 digits, like C0001.');
+        }
         setStage('saving');
         const { data, error: err } = await supabase
           .from('models')
           .insert({
             organization_id: activeOrg.id,
             name: name.trim(),
+            // Blank lets the database give it the next free code.
+            product_code: normalizeProductCode(productCode),
             category: category.trim() || null,
             generation_method: method,
             generation_tool: tool.trim() || null,
@@ -370,13 +379,17 @@ export function Upload() {
                         onChange={(e) => setTargetModelId(e.target.value)}>
                   <option value="">Create a new model</option>
                   {models.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name} — add a version</option>
+                    <option key={m.id} value={m.id}>{m.product_code} · {m.name} — add a version</option>
                   ))}
                 </select>
               </Field>
 
               {!targetModelId && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)] gap-4">
+                  <Field label="Product code">
+                    <input className="field font-mono uppercase" value={productCode} placeholder="C0001"
+                           onChange={(e) => setProductCode(e.target.value)} />
+                  </Field>
                   <Field label="Model name">
                     <input required className="field" value={name}
                            onChange={(e) => setName(e.target.value)} />

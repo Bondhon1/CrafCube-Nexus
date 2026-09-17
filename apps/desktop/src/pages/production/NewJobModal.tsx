@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  CustomBuild, FilamentSpool, Model, ModelFile, ModelVersion, Printer, StoredSlice, WasteKind,
+  CustomBuild, CustomDesign, FilamentSpool, Model, ModelFile, ModelVersion, Printer, StoredSlice, WasteKind,
 } from '@crafcube/types';
 import {
   CUSTOM_BUILD_SOURCE_LABELS, WASTE_KINDS, WASTE_KIND_LABELS, formatDuration,
@@ -58,11 +58,14 @@ export function NewJobModal({
   const [mode, setMode] = useState<Mode>(initialBuildId ? 'custom' : 'library');
   const [models, setModels] = useState<ModelWithVersions[]>([]);
   const [builds, setBuilds] = useState<CustomBuild[]>([]);
+  const [designs, setDesigns] = useState<CustomDesign[]>([]);
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [spools, setSpools] = useState<SpoolOption[]>([]);
 
   const [modelId, setModelId] = useState('');
   const [buildId, setBuildId] = useState(initialBuildId ?? '');
+  /** The design a newly dropped file is filed under. */
+  const [designId, setDesignId] = useState('');
   const [dropped, setDropped] = useState<{ buffer: ArrayBuffer; filename: string; sha: string } | null>(null);
   const [printerId, setPrinterId] = useState('');
   const [quantity, setQuantity] = useState('1');
@@ -81,7 +84,7 @@ export function NewJobModal({
   useEffect(() => {
     if (!activeOrg) return;
     void (async () => {
-      const [m, p, s, b] = await Promise.all([
+      const [m, p, s, b, d] = await Promise.all([
         supabase.from('models')
           .select('*, versions:model_versions(*, files:model_files(*))')
           .eq('organization_id', activeOrg.id).eq('archived', false).order('name'),
@@ -93,11 +96,14 @@ export function NewJobModal({
         supabase.from('custom_builds').select('*')
           .eq('organization_id', activeOrg.id).neq('status', 'archived')
           .order('created_at', { ascending: false }).limit(100),
+        supabase.from('custom_designs').select('*')
+          .eq('organization_id', activeOrg.id).eq('archived', false).order('product_code'),
       ]);
       setModels((m.data ?? []) as unknown as ModelWithVersions[]);
       setPrinters((p.data ?? []) as Printer[]);
       setSpools((s.data ?? []) as unknown as SpoolOption[]);
       setBuilds((b.data ?? []) as CustomBuild[]);
+      setDesigns((d.data ?? []) as CustomDesign[]);
       setPrinterId((c) => c || (p.data?.[0] as Printer | undefined)?.id || '');
     })();
   }, [activeOrg]);
@@ -109,6 +115,10 @@ export function NewJobModal({
   );
   const source = version?.files.find((f) => f.kind === 'source' || f.kind === 'mesh');
   const build = builds.find((b) => b.id === buildId);
+  const designCode = useCallback(
+    (id: string) => designs.find((d) => d.id === id)?.product_code ?? '',
+    [designs],
+  );
   const printer = printers.find((p) => p.id === printerId);
   const settings = useMemo(() => jobSliceSettings(printer), [printer]);
   const settingsKey = sliceSettingsKey(settings);
@@ -312,8 +322,10 @@ export function NewJobModal({
       // A dropped file nobody has seen before becomes a build here — its
       // description and slice are kept; the file is not.
       if (mode === 'custom' && !customBuildId && dropped) {
+        if (!designId) throw new Error('Choose which design this build is, so it sells under its product code.');
         const { data, error: buildErr } = await supabase.from('custom_builds').insert({
           organization_id: activeOrg.id,
+          design_id: designId,
           source: 'manual',
           title: title || 'Custom build',
           file_name: dropped.filename,
@@ -394,7 +406,7 @@ export function NewJobModal({
                 <option value="">Choose a model…</option>
                 {models.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name}
+                    {m.product_code} · {m.name}
                     {m.versions.length > 0 ? ` · v${Math.max(...m.versions.map((v) => v.version))}` : ''}
                   </option>
                 ))}
@@ -407,10 +419,23 @@ export function NewJobModal({
                 <option value="">{dropped ? `New: ${dropped.filename}` : 'Choose a build, or drop a file…'}</option>
                 {builds.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.title} · {CUSTOM_BUILD_SOURCE_LABELS[b.source]}
+                    {designCode(b.design_id)} · {b.title} · {CUSTOM_BUILD_SOURCE_LABELS[b.source]}
                   </option>
                 ))}
               </select>
+            </Field>
+          )}
+          {mode === 'custom' && !buildId && dropped && (
+            <Field label="Design" hint="The product code this build sells under.">
+              <select required className="field" value={designId} onChange={(e) => setDesignId(e.target.value)}>
+                <option value="">Choose a design…</option>
+                {designs.map((d) => (
+                  <option key={d.id} value={d.id}>{d.product_code} · {d.name}</option>
+                ))}
+              </select>
+              {designs.length === 0 && (
+                <p className="mt-1 text-xs text-amber-300">No designs yet. Add one under Models → Custom builds.</p>
+              )}
             </Field>
           )}
           <Field label="Printer">

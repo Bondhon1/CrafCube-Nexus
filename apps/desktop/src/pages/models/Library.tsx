@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Model, ModelFile, ModelVersion } from '@crafcube/types';
-import { GENERATION_METHOD_LABELS, MODEL_LICENSE_LABELS } from '@crafcube/types';
+import {
+  GENERATION_METHOD_LABELS, MODEL_LICENSE_LABELS, isProductCode, normalizeProductCode,
+} from '@crafcube/types';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/app/SessionProvider';
 import { formatBytes, objectStore, sha256 } from '@/lib/storage';
@@ -89,6 +91,7 @@ export function Library() {
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return (
+      m.product_code.toLowerCase().includes(q) ||
       m.name.toLowerCase().includes(q) ||
       (m.category ?? '').toLowerCase().includes(q) ||
       m.tags.some((t) => t.toLowerCase().includes(q))
@@ -115,7 +118,7 @@ export function Library() {
           <>
             <input
               className="field w-40 sm:w-56"
-              placeholder="Search name, category, tag"
+              placeholder="Search code, name, tag"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -133,6 +136,7 @@ export function Library() {
           <Table
             head={
               <>
+                <Th>Code</Th>
                 <Th>Model</Th>
                 <Th>Source</Th>
                 <Th>License</Th>
@@ -141,9 +145,9 @@ export function Library() {
               </>
             }
           >
-            {loading && <EmptyRow colSpan={5}>Loading…</EmptyRow>}
+            {loading && <EmptyRow colSpan={6}>Loading…</EmptyRow>}
             {!loading && visible.length === 0 && (
-              <EmptyRow colSpan={5}>
+              <EmptyRow colSpan={6}>
                 {rows.length === 0
                   ? 'No models yet. Upload an STL or 3MF to start the library.'
                   : 'Nothing matches that search.'}
@@ -161,6 +165,7 @@ export function Library() {
                     active ? 'bg-mint/[0.07]' : 'hover:bg-white/[0.02]'
                   }`}
                 >
+                  <Td className="whitespace-nowrap font-mono text-xs text-mint">{m.product_code}</Td>
                   <Td>
                     <div className="flex items-center gap-3">
                       {thumbnails[m.id] ? (
@@ -205,7 +210,8 @@ export function Library() {
           </Table>
         </Panel>
 
-        <ModelPanel model={selected} onThumbnail={load} />
+        <ModelPanel model={selected} onThumbnail={load} onChanged={load}
+                    canEdit={can('models.write')} />
       </div>
     </div>
   );
@@ -221,15 +227,39 @@ export function Library() {
 function ModelPanel({
   model,
   onThumbnail,
+  onChanged,
+  canEdit,
 }: {
   model: ModelRow | null;
   onThumbnail: () => void;
+  onChanged: () => void;
+  canEdit: boolean;
 }) {
   const { activeOrg } = useSession();
   const [mesh, setMesh] = useState<{ buffer: ArrayBuffer; filename: string } | null>(null);
   const [state, setState] = useState<'idle' | 'loading' | 'unavailable'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [editingCode, setEditingCode] = useState<string | null>(null);
+
+  useEffect(() => { setEditingCode(null); }, [model?.id]);
+
+  async function saveCode() {
+    if (!model || editingCode === null) return;
+    const code = normalizeProductCode(editingCode);
+    if (!isProductCode(code)) {
+      setError('A product code is 1-4 letters then 3-6 digits, like C0001.');
+      return;
+    }
+    setError(null);
+    const { error: err } = await supabase.from('models').update({ product_code: code }).eq('id', model.id);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    setEditingCode(null);
+    onChanged();
+  }
 
   const latest = model ? latestVersion(model) : undefined;
   const source = latest?.files.find((f) => f.kind === 'source' || f.kind === 'mesh');
@@ -324,7 +354,26 @@ function ModelPanel({
   return (
     <div className="card min-w-0 space-y-4">
       <div className="min-w-0">
-        <h2 className="truncate text-sm font-semibold text-slate-200">{model.name}</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="truncate text-sm font-semibold text-slate-200">{model.name}</h2>
+          {editingCode === null ? (
+            <button type="button" disabled={!canEdit} onClick={() => setEditingCode(model.product_code)}
+                    title={canEdit ? 'Change product code' : undefined}
+                    className="shrink-0 rounded border border-mint/30 bg-mint/10 px-2 py-0.5 font-mono
+                               text-xs text-mint enabled:hover:border-mint/60">
+              {model.product_code}
+            </button>
+          ) : (
+            <form className="flex shrink-0 items-center gap-1.5"
+                  onSubmit={(e) => { e.preventDefault(); void saveCode(); }}>
+              <input autoFocus className="field w-24 py-1 font-mono text-xs uppercase" value={editingCode}
+                     onChange={(e) => setEditingCode(e.target.value)} aria-label="Product code" />
+              <button type="submit" className="text-xs text-mint hover:text-mint-500">Save</button>
+              <button type="button" className="text-xs text-slate-500 hover:text-slate-300"
+                      onClick={() => setEditingCode(null)}>Cancel</button>
+            </form>
+          )}
+        </div>
         <p className="mt-0.5 text-xs text-slate-500">
           {[model.category, GENERATION_METHOD_LABELS[model.generation_method]]
             .filter(Boolean).join(' · ')}

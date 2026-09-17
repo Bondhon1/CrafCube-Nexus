@@ -115,6 +115,12 @@ export interface OrderItem {
   order_id: UUID;
   product_id: UUID | null;
   quote_id: UUID | null;
+  /** The product code the line was taken by; the database resolves it. */
+  product_code: string | null;
+  model_id: UUID | null;
+  custom_design_id: UUID | null;
+  /** For a custom design: which customer's build, once known. */
+  custom_build_id: UUID | null;
   description: string;
   quantity: number;
   unit_price: number;

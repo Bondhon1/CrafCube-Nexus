@@ -31,6 +31,8 @@ export const MODEL_LICENSE_LABELS: Record<ModelLicense, string> = {
 export interface Model {
   id: UUID;
   organization_id: UUID;
+  /** C0001. Shared with custom designs: one code names one thing. */
+  product_code: string;
   name: string;
   category: string | null;
   description: string | null;
@@ -100,4 +102,59 @@ export interface DuplicateFile {
   model_name: string;
   version: number;
   uploaded_at: Timestamp;
+}
+
+/** 1-4 letters then 3-6 digits, as the database stores it. */
+const PRODUCT_CODE = /^[A-Z]{1,4}[0-9]{3,6}$/;
+
+/** What a typed code is stored as: trimmed and upper case, or null if blank. */
+export function normalizeProductCode(input: string | null | undefined): string | null {
+  const code = (input ?? '').trim().toUpperCase();
+  return code === '' ? null : code;
+}
+
+export function isProductCode(input: string | null | undefined): boolean {
+  const code = normalizeProductCode(input);
+  return code !== null && PRODUCT_CODE.test(code);
+}
+
+export type CustomDesignSource = 'manual' | 'flexi-name-studio';
+
+/**
+ * A one-off design sold under one code - "flexi name keychain" - whose
+ * customer builds (each name, each colourway) are grouped under it.
+ */
+export interface CustomDesign {
+  id: UUID;
+  organization_id: UUID;
+  product_code: string;
+  name: string;
+  description: string | null;
+  source: CustomDesignSource;
+  /** The sender's own name for the design, e.g. the studio's "daisy-name". */
+  design_key: string | null;
+  archived: boolean;
+  created_by: UUID | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/** One row of `product_catalog`: every code, library model or custom design. */
+export interface CatalogEntry {
+  organization_id: UUID;
+  product_code: string;
+  kind: 'model' | 'custom';
+  model_id: UUID | null;
+  custom_design_id: UUID | null;
+  name: string;
+  category: string | null;
+  archived: boolean;
+}
+
+/** Finds an entry by code however it was typed. */
+export function findByCode<T extends { product_code: string }>(
+  entries: readonly T[], input: string | null | undefined,
+): T | undefined {
+  const code = normalizeProductCode(input);
+  return code === null ? undefined : entries.find((e) => e.product_code === code);
 }
